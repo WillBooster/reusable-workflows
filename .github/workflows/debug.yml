@@ -12,7 +12,7 @@ on:
 
 jobs:
   debug:
-    runs-on: [self-hosted, large]
+    runs-on: ['self-hosted', 'large']
     steps:
       - name: Show environment information
         id: env-info
