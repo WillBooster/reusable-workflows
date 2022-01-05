@@ -12,8 +12,9 @@ on:
 
 jobs:
   debug:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
+      - uses: actions/checkout@v2
       - name: Show environment information
         id: env-info
         # https://stackoverflow.com/a/677212
