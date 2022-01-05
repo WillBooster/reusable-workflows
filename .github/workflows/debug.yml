@@ -27,3 +27,5 @@ jobs:
           echo "::set-output name=git-revision::$(git describe --always --tags)"
           if [[ "$(yarn -v)" == "1."* ]]; then echo "::set-output name=yarn-dir::$(yarn cache dir)"; fi
           echo "::set-output name=git-revision::$(git describe --always --tags)"
+      - run: |
+          echo ${{ steps.env-info.outputs.git-revision }}
