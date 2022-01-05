@@ -39,9 +39,7 @@ jobs:
         run: |
           echo "node: $(node -v)"
           echo "yarn: $(yarn -v)"
-          if [[ "$(yarn -v)" == "1."* ]]; then
-            echo "::set-output name=yarn-dir::$(yarn cache dir)"
-          fi
+          if [[ "$(yarn -v)" == "1."* ]]; then echo "::set-output name=yarn-dir::$(yarn cache dir)"; fi
 
       - if: ${{ steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v2
