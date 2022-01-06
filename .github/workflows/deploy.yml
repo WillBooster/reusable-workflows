@@ -72,7 +72,6 @@ jobs:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
-
     steps:
       - uses: fkirc/skip-duplicate-actions@master
         with:
@@ -105,6 +104,14 @@ jobs:
             echo "::set-output name=yarn-dir::$(yarn cache dir)"
           fi
           echo "::set-output name=git-revision::$(git describe --always --tags)"
+      - name: Set environment variables
+        run: |
+          echo "PATH=$HOME/.fly/bin:$PATH" >> $GITHUB_ENV
+          echo "VERSION=${{ steps.env-info.outputs.git-revision }}" >> $GITHUB_ENV
+      - name: Show environment variables
+        run: |
+          echo ${PATH}
+          echo ${VERSION}
 
       - if: ${{ steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v2
