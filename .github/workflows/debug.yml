@@ -9,8 +9,6 @@ on:
 jobs:
   debug:
     runs-on: ubuntu-latest
-    env:
-      PATH: '$HOME/.fly/bin:$PATH'
     steps:
       - uses: actions/checkout@v2
       - name: Show environment information
@@ -26,7 +24,9 @@ jobs:
             echo "::set-output name=yarn-dir::$(yarn cache dir)"
           fi
           echo "::set-output name=git-revision::$(git describe --always --tags)"
-      - run: |
+      - name: Set environment variables
+        run: |
+          echo "PATH=$HOME/.fly/bin:$PATH" >> $GITHUB_ENV
           echo "VERSION=${{ steps.env-info.outputs.git-revision }}" >> $GITHUB_ENV
           echo ${PATH}
           echo ${VERSION}
