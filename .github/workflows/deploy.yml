@@ -108,7 +108,7 @@ jobs:
         run: |
           echo "PATH=$HOME/.fly/bin:$PATH" >> $GITHUB_ENV
           echo "VERSION=${{ steps.env-info.outputs.git-revision }}" >> $GITHUB_ENV
-      - name: Show environment variables
+      - name: Verify environment variables
         run: |
           echo ${PATH}
           echo ${VERSION}
