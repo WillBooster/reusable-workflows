@@ -1,6 +1,7 @@
 name: Debug
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - 'main'
@@ -28,5 +29,7 @@ jobs:
         run: |
           echo "PATH=$HOME/.fly/bin:$PATH" >> $GITHUB_ENV
           echo "VERSION=${{ steps.env-info.outputs.git-revision }}" >> $GITHUB_ENV
+      - name: Show environment variables
+        run: |
           echo ${PATH}
           echo ${VERSION}
