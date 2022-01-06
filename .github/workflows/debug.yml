@@ -1,7 +1,7 @@
 name: Debug
 
 on:
-  push:
+  pull_request:
     branches:
       - 'main'
       - '!renovate/**'
@@ -9,9 +9,6 @@ on:
 jobs:
   debug:
     runs-on: ubuntu-latest
-    env:
-      PATH: '$HOME/.fly/bin:$PATH'
-      VERSION: '${{ inputs.version || steps.env-info.outputs.git-revision }}'
     steps:
       - run: |
           echo ${PATH}
