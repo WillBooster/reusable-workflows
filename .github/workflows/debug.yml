@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
-        node-version: ${{ fromJson('' || '[""]') }}
+        node-version: ${{ fromJson('' || '["14", "15"]') }}
     steps:
       - uses: actions/checkout@v2
       - name: Show environment information
