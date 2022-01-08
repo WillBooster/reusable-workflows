@@ -36,7 +36,7 @@ jobs:
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
-        node-version: ${{ fromJson(inputs.node-versions || "['']") }}
+        node-version: ${{ fromJson(inputs.node-versions || '[""]') }}
     steps:
       - uses: fkirc/skip-duplicate-actions@master
         with:
