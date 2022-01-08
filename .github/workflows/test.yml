@@ -30,6 +30,10 @@ jobs:
     needs: pre
     if: ${{ needs.pre.outputs.should_skip != 'true' }}
     runs-on: ${{ (inputs.non_self_hosted && 'ubuntu-latest') || fromJSON('["self-hosted", "large"]') }}
+    strategy:
+      matrix:
+        # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
+        node-version: ${{ fromJson(inputs.node-versions) }}
     steps:
       - uses: fkirc/skip-duplicate-actions@master
         with:
@@ -38,7 +42,15 @@ jobs:
       - if: ${{ inputs.dot_env_path }}
         run: echo "${{ secrets.DOT_ENV }}" > ${{ inputs.dot_env_path }}
 
-      - uses: willbooster/asdf-actions/install@main
+      - id: get-ver
+        run: |
+          if ! [[ -f .tool-versions ]]; then
+            echo "::set-output name=node::$(cat .node-version || echo 16)"
+          fi
+      - if: ${{ steps.get-ver.outputs.node }}
+        uses: willbooster/asdf-actions/install@main
+      - if: ${{ ! steps.get-ver.outputs.node }}
+        uses: willbooster/asdf-actions/install@main
       - name: Show environment information
         id: env-info
         # https://stackoverflow.com/a/677212
