@@ -10,12 +10,17 @@ on:
 jobs:
   debug:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
+        node-version: ${{ fromJson('' || "['']") }}
     steps:
       - uses: actions/checkout@v2
       - name: Show environment information
         id: env-info
         # https://stackoverflow.com/a/677212
         run: |
+          echo "${{ matrix.node-version }}"
           echo "node: $(node -v)"
           echo "yarn: $(yarn -v)"
           if command -v python &> /dev/null; then echo "python: $(python --version)"; fi
@@ -33,3 +38,11 @@ jobs:
         run: |
           echo ${PATH}
           echo ${VERSION}
+
+      - id: get-ver
+        run: |
+          if ! [[ -f .tool-versions ]]; then
+            echo "::set-output name=node::$(cat .node-version || echo 16)"
+          fi
+      - if: ${{ matrix.node-version || steps.get-ver.outputs.node }}
+        run: echo ${{ matrix.node-version || steps.get-ver.outputs.node }}

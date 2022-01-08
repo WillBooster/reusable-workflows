@@ -6,6 +6,9 @@ on:
       dot_env_path:
         required: false
         type: string
+      node-versions:
+        required: false
+        type: string
       non_self_hosted:
         required: false
         type: boolean
@@ -33,7 +36,7 @@ jobs:
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
-        node-version: ${{ fromJson(inputs.node-versions) }}
+        node-version: ${{ fromJson(inputs.node-versions || "['']") }}
     steps:
       - uses: fkirc/skip-duplicate-actions@master
         with:
@@ -47,8 +50,10 @@ jobs:
           if ! [[ -f .tool-versions ]]; then
             echo "::set-output name=node::$(cat .node-version || echo 16)"
           fi
-      - if: ${{ steps.get-ver.outputs.node }}
-        uses: willbooster/asdf-actions/install@main
+      - if: ${{ matrix.node-version || steps.get-ver.outputs.node }}
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ matrix.node-version || steps.get-ver.outputs.node }}
       - if: ${{ ! steps.get-ver.outputs.node }}
         uses: willbooster/asdf-actions/install@main
       - name: Show environment information
