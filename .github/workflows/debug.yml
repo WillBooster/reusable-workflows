@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
-        node-version: ${{ fromJson('' || '[""]') }}
+        node-version: ${{ fromJson(needs.pre.detect-node-version-matrix.json || '[""]') }}
     steps:
       - uses: actions/checkout@v2
       - name: Show environment information
@@ -52,4 +52,4 @@ jobs:
       - if: ${{ matrix.node-version || steps.get-ver.outputs.node }}
         run: echo ${{ matrix.node-version || steps.get-ver.outputs.node }}
 
-      - run: echo ${{ fromJson(inputs.node-versions || '[""]') }}
+      - run: echo ${{ fromJson(needs.pre.detect-node-version-matrix.json || '[""]') }}
