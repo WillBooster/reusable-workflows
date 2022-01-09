@@ -12,6 +12,10 @@ jobs:
     uses: WillBooster/reusable-workflows/.github/workflows/detect-node-version-matrix.yml@node-version
     with:
       non_self_hosted: true
+  test:
+    uses: WillBooster/reusable-workflows/.github/workflows/test.yml@node-version
+    with:
+      non_self_hosted: true
   debug:
     runs-on: ubuntu-latest
     needs: detect-node-version-matrix
