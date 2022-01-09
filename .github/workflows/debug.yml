@@ -14,15 +14,17 @@ jobs:
       non_self_hosted: true
   test:
     uses: WillBooster/reusable-workflows/.github/workflows/test.yml@node-version
+    needs: detect-node-version-matrix
     with:
       non_self_hosted: true
+      node_version_matrix_json: ${{ needs.detect-node-version-matrix.outputs.json }}
   debug:
     runs-on: ubuntu-latest
     needs: detect-node-version-matrix
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
-        node-version: ${{ fromJson(needs.pre.detect-node-version-matrix.json || '[""]') }}
+        node-version: ${{ fromJson(needs.detect-node-version-matrix.outputs.json || '[""]') }}
     steps:
       - uses: actions/checkout@v2
       - name: Show environment information
@@ -56,4 +58,4 @@ jobs:
       - if: ${{ matrix.node-version || steps.get-ver.outputs.node }}
         run: echo ${{ matrix.node-version || steps.get-ver.outputs.node }}
 
-      - run: echo ${{ needs.pre.detect-node-version-matrix.json || '[""]' }}
+      - run: echo ${{ needs.detect-node-version-matrix.outputs.json || '[""]' }}
