@@ -1,0 +1,27 @@
+name: Detect node version matrix
+
+on:
+  workflow_call:
+    inputs:
+      non_self_hosted:
+        required: false
+        type: boolean
+    outputs:
+      json:
+        value: ${{ jobs.detect.outputs.json }}
+
+jobs:
+  detect:
+    runs-on: ${{ (inputs.non_self_hosted && 'ubuntu-latest') || fromJSON('["self-hosted", "large"]') }}
+    outputs:
+      json: ${{ steps.node-version-matrix.outputs.json }}
+    steps:
+      - uses: actions/checkout@v2
+      - id: node-version-matrix
+        run: |
+          CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
+          NODE_VERSIONS=$(npx -y semver -r $CONSTRAINT 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g')
+          if [[ ! -z "$NODE_VERSIONS" ]] then;
+            NODE_VERSIONS_JSON=$(echo "\"[\"$NODE_VERSIONS\"]\"")
+            echo "::set-output name=json::$NODE_VERSIONS_JSON"
+          fi
