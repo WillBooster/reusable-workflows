@@ -9,7 +9,7 @@ on:
 
 jobs:
   detect-node-version-matrix:
-    uses: WillBooster/reusable-workflows/.github/workflows/detect-node-version-matrix.yml@main
+    uses: WillBooster/reusable-workflows/.github/workflows/detect-node-version-matrix.yml@node-version
     with:
       non_self_hosted: true
   debug:
