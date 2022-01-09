@@ -56,4 +56,4 @@ jobs:
       - if: ${{ matrix.node-version || steps.get-ver.outputs.node }}
         run: echo ${{ matrix.node-version || steps.get-ver.outputs.node }}
 
-      - run: echo ${{ fromJson(needs.pre.detect-node-version-matrix.json || '[""]') }}
+      - run: echo ${{ needs.pre.detect-node-version-matrix.json || '[""]' }}
