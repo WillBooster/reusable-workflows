@@ -21,7 +21,7 @@ jobs:
           echo $(npx -y semver -r $CONSTRAINT 12.0.0 14.0.0 16.0.0) | sed 's/ /","/g' | sed 's/\.0\.0//g'
       - run: |
           CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
-          npx -y semver -r $CONSTRAINT 12.0.0 14.0.0 16.0.0
+          npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0
       - run: |
           CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
           echo $(npx -y semver -r $CONSTRAINT 12.0.0 14.0.0 16.0.0)
