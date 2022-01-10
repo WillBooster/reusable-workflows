@@ -8,6 +8,10 @@ on:
       - '!renovate/**'
 
 jobs:
+  test:
+    uses: WillBooster/reusable-workflows/.github/workflows/test.yml@node-version
+    with:
+      non_self_hosted: true
   detect-node-version-matrix:
     runs-on: ubuntu-latest
     outputs:
@@ -24,12 +28,6 @@ jobs:
             NODE_VERSIONS_JSON=[""]
           fi
           echo "::set-output name=json::$NODE_VERSIONS_JSON"
-  test:
-    uses: WillBooster/reusable-workflows/.github/workflows/test.yml@node-version
-    needs: detect-node-version-matrix
-    with:
-      non_self_hosted: true
-      node_version_matrix_json: ${{ needs.detect-node-version-matrix.outputs.json }}
   debug:
     runs-on: ubuntu-latest
     needs: detect-node-version-matrix
@@ -71,3 +69,11 @@ jobs:
         run: echo ${{ matrix.node-version || steps.get-ver.outputs.node }}
 
       - run: echo ${{ needs.detect-node-version-matrix.outputs.json || '[""]' }}
+
+      - id: detect-node-version
+        # Use asdf if .tool-versions exists
+        run: |
+          if [[ ! -f .tool-versions ]]; then
+            echo "::set-output name=version::$(cat .node-version || echo 16)"
+          fi
+      - run: echo ${{ steps.detect-node-version.outputs.version }}
