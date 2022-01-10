@@ -66,9 +66,9 @@ jobs:
           echo ${VERSION}
 
       - if: ${{ matrix.node-version }}
-        run: echo "matrix.node-version is truthy"
+        run: echo ${{ matrix.node-version }} && echo "matrix.node-version is truthy"
       - if: ${{ !matrix.node-version }}
-        run: echo "matrix.node-version is falsy"
+        run: echo ${{ matrix.node-version }} && echo "matrix.node-version is falsy"
       - run: echo ${{ needs.detect-node-version-matrix.outputs.json }}
 
       - id: get-ver
