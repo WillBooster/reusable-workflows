@@ -84,7 +84,7 @@ jobs:
         # We prefer actions/setup-node to asdf due to performance
         # However, we must use asdf if .tool-versions exists
         run: |
-          if ! [[ -f .tool-versions ]]; then
+          if [[ ! -f .tool-versions ]]; then
             echo "::set-output name=node::$(cat .node-version || echo 16)"
           fi
       - if: ${{ steps.get-ver.outputs.node }}
@@ -95,11 +95,11 @@ jobs:
         uses: willbooster/asdf-actions/install@main
       - if: ${{ inputs.require_gcloud }}
         run: |
-          if ! [[ -f .tool-versions ]] || ! [[ "$(cat .tool-versions)" == *"python"* ]]; then
+          if [[ ! -f .tool-versions ]] || [[ "$(cat .tool-versions)" != *"python"* ]]; then
             asdf install python $PYTHON_VERSION
             asdf local python $PYTHON_VERSION
           fi
-          if ! [[ -f .tool-versions ]] || ! [[ "$(cat .tool-versions)" == *"gcloud"* ]]; then
+          if [[ ! -f .tool-versions ]] || [[ "$(cat .tool-versions)" != *"gcloud"* ]]; then
             asdf install gcloud $GCLOUD_VERSION
             asdf local gcloud $GCLOUD_VERSION
           fi
