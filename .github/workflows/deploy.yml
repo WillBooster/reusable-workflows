@@ -84,7 +84,7 @@ jobs:
         # We prefer actions/setup-node to asdf due to performance
         # However, we must use asdf if .tool-versions exists
         run: |
-          if [[ ! -f .tool-versions ]]; then
+          if ! [[ -f .tool-versions ]]; then
             echo "::set-output name=node::$(cat .node-version || echo 16)"
           fi
       - if: ${{ steps.get-ver.outputs.node }}

@@ -39,7 +39,7 @@ jobs:
         # However, we must use asdf if .tool-versions exists
         run: |
           NODE_VERSIONS=""
-          if [[ ! -f .tool-versions ]]; then
+          if ! [[ -f .tool-versions ]]; then
             CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
             NODE_VERSIONS=$(npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g' | sed 's/\.0\.0//g')
             if [[ -z "$NODE_VERSIONS" ]]; then
