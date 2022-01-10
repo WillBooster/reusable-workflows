@@ -28,14 +28,12 @@ jobs:
       - id: detect-node-version-matrix
         run: |
           CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
-          echo $CONSTRAINT
           npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0
-          echo $(npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0) | sed 's/ /","/g' | sed 's/\.0\.0//g'
           npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g' | sed 's/\.0\.0//g'
           NODE_VERSIONS=$(npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g' | sed 's/\.0\.0//g')
-          echo $NODE_VERSIONS
           if [[ ! -z "$NODE_VERSIONS" ]]; then
             NODE_VERSIONS_JSON=$(echo "\"[\"$NODE_VERSIONS\"]\"")
+            echo $NODE_VERSIONS_JSON
             echo "::set-output name=json::$NODE_VERSIONS_JSON"
           fi
   test:
