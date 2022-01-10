@@ -15,7 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: npx -y semver
-      - run: echo $(npx -y semver -r $CONSTRAINT 12.0.0 14.0.0 16.0.0) | sed 's/ /","/g' | sed 's/\.0\.0//g'
+      - run: |
+          CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
+          echo $(npx -y semver -r $CONSTRAINT 12.0.0 14.0.0 16.0.0) | sed 's/ /","/g' | sed 's/\.0\.0//g'
       - id: detect-node-version-matrix
         run: |
           CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
