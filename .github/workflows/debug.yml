@@ -19,20 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - id: detect-node-version-matrix
-        # Use asdf if .tool-versions exists
         run: |
-          NODE_VERSIONS_JSON=""
-          echo [[ ! -f .tool-versions ]]
+          NODE_VERSIONS=""
           if [[ ! -f .tool-versions ]]; then
             CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
             NODE_VERSIONS=$(npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g' | sed 's/\.0\.0//g')
-            echo $CONSTRAINT
-            echo $NODE_VERSIONS
             if [[ -z "$NODE_VERSIONS" ]]; then
-              NODE_VERSIONS_JSON="$(cat .node-version || echo 16)"
+              NODE_VERSIONS="$(cat .node-version || echo 16)"
             fi
           fi
-          echo "::set-output name=json::[\"$NODE_VERSIONS_JSON\"]"
+          echo "::set-output name=json::[\"$NODE_VERSIONS\"]"
   debug:
     runs-on: ubuntu-latest
     needs: detect-node-version-matrix
