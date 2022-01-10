@@ -6,9 +6,6 @@ on:
       dot_env_path:
         required: false
         type: string
-      node_version_matrix_json:
-        required: false
-        type: string
       non_self_hosted:
         required: false
         type: boolean
@@ -32,30 +29,30 @@ jobs:
   detect-node-version-matrix:
     needs: pre
     if: ${{ needs.pre.outputs.should_skip != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.non_self_hosted && 'ubuntu-latest') || fromJSON('["self-hosted", "large"]') }}
     outputs:
       json: ${{ steps.detect-node-version-matrix.outputs.json }}
     steps:
-      - if: ${{ !inputs.node_version_matrix_json }}
-        uses: actions/checkout@v2
-      - if: ${{ !inputs.node_version_matrix_json }}
-        id: detect-node-version-matrix
+      - uses: actions/checkout@v2
+      - id: detect-node-version-matrix
+        # Use asdf if .tool-versions exists
         run: |
-          CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
-          NODE_VERSIONS=$(npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g' | sed 's/\.0\.0//g')
-          if [[ ! -z "$NODE_VERSIONS" ]]; then
-            NODE_VERSIONS_JSON=$(echo "[\"$NODE_VERSIONS\"]")
-          else
-            NODE_VERSIONS_JSON=[""]
+          NODE_VERSIONS_JSON=""
+          if [[ ! -f .tool-versions ]]; then
+            CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
+            NODE_VERSIONS=$(npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g' | sed 's/\.0\.0//g')
+            if [[ -z "$NODE_VERSIONS" ]]; then
+              NODE_VERSIONS_JSON="$(cat .node-version || echo 16)"
+            fi
           fi
-          echo "::set-output name=json::$NODE_VERSIONS_JSON"
+          echo "::set-output name=json::[\"$NODE_VERSIONS_JSON\"]"
   test:
     needs: detect-node-version-matrix
     runs-on: ${{ (inputs.non_self_hosted && 'ubuntu-latest') || fromJSON('["self-hosted", "large"]') }}
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
-        node-version: ${{ fromJson(inputs.node_version_matrix_json || needs.detect-node-version-matrix.outputs.json) }}
+        node-version: ${{ fromJson(needs.detect-node-version-matrix.outputs.json) }}
     steps:
       - uses: fkirc/skip-duplicate-actions@master
         with:
@@ -64,16 +61,11 @@ jobs:
       - if: ${{ inputs.dot_env_path }}
         run: echo "${{ secrets.DOT_ENV }}" > ${{ inputs.dot_env_path }}
 
-      - id: get-ver
-        run: |
-          if ! [[ -f .tool-versions ]]; then
-            echo "::set-output name=node::$(cat .node-version || echo 16)"
-          fi
-      - if: ${{ matrix.node-version || steps.get-ver.outputs.node }}
+      - if: ${{ matrix.node-version }}
         uses: actions/setup-node@v2
         with:
-          node-version: ${{ matrix.node-version || steps.get-ver.outputs.node }}
-      - if: ${{ !steps.get-ver.outputs.node }}
+          node-version: ${{ matrix.node-version }}
+      - if: ${{ !matrix.node-version }}
         uses: willbooster/asdf-actions/install@main
       - name: Show environment information
         id: env-info
