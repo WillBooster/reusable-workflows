@@ -31,6 +31,7 @@ jobs:
           fi
           echo $NODE_VERSIONS_JSON
           echo "::set-output name=json::[\"$NODE_VERSIONS_JSON\"]"
+          echo "[\"$NODE_VERSIONS_JSON\"]"
   debug:
     runs-on: ubuntu-latest
     needs: detect-node-version-matrix
