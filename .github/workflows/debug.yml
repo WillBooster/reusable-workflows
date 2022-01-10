@@ -65,19 +65,11 @@ jobs:
           echo ${PATH}
           echo ${VERSION}
 
-      - id: get-ver
-        run: |
-          if ! [[ -f .tool-versions ]]; then
-            echo "::set-output name=node::$(cat .node-version || echo 16)"
-          fi
-      - if: ${{ matrix.node-version || steps.get-ver.outputs.node }}
-        run: echo ${{ matrix.node-version || steps.get-ver.outputs.node }}
-
       - if: ${{ matrix.node-version }}
         run: echo "matrix.node-version is truthy"
       - if: ${{ !matrix.node-version }}
         run: echo "matrix.node-version is falsy"
-      - run: echo ${{ needs.detect-node-version-matrix.outputs.json || '[""]' }}
+      - run: echo ${{ needs.detect-node-version-matrix.outputs.json }}
 
       - id: get-ver
         # Use asdf if .tool-versions exists
