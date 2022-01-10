@@ -29,14 +29,31 @@ jobs:
           skip_after_successful_duplicate: true
           concurrent_skipping: same_content_newer
           paths_ignore: '["**/*.md", "**/docs/**"]'
-  test:
+  detect-node-version-matrix:
     needs: pre
     if: ${{ needs.pre.outputs.should_skip != 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.detect-node-version-matrix.outputs.json }}
+    steps:
+      - uses: actions/checkout@v2
+      - id: detect-node-version-matrix
+        run: |
+          CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
+          NODE_VERSIONS=$(npx -y semver -r "$CONSTRAINT" 12.0.0 14.0.0 16.0.0 | xargs | sed 's/ /","/g' | sed 's/\.0\.0//g')
+          if [[ ! -z "$NODE_VERSIONS" ]]; then
+            NODE_VERSIONS_JSON=$(echo "[\"$NODE_VERSIONS\"]")
+          else
+            NODE_VERSIONS_JSON=[""]
+          fi
+          echo "::set-output name=json::$NODE_VERSIONS_JSON"
+  test:
+    needs: detect-node-version-matrix
     runs-on: ${{ (inputs.non_self_hosted && 'ubuntu-latest') || fromJSON('["self-hosted", "large"]') }}
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
-        node-version: ${{ fromJson(inputs.node_version_matrix_json || '[""]') }}
+        node-version: ${{ fromJson(inputs.node_version_matrix_json || needs.detect-node-version-matrix.outputs.json) }}
     steps:
       - uses: fkirc/skip-duplicate-actions@master
         with:
