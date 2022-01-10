@@ -34,13 +34,11 @@ jobs:
     needs: detect-node-version-matrix
     strategy:
       matrix:
-        # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
         node-version: ${{ fromJson(needs.detect-node-version-matrix.outputs.json) }}
     steps:
       - uses: actions/checkout@v2
       - name: Show environment information
         id: env-info
-        # https://stackoverflow.com/a/677212
         run: |
           echo "${{ matrix.node-version }}"
           echo "node: $(node -v)"
@@ -68,7 +66,6 @@ jobs:
       - run: echo ${{ needs.detect-node-version-matrix.outputs.json }}
 
       - id: get-ver
-        # Use asdf if .tool-versions exists
         run: |
           if [[ ! -f .tool-versions ]]; then
             echo "::set-output name=node::$(cat .node-version || echo 16)"

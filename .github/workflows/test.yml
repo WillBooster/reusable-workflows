@@ -35,7 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - id: detect-node-version-matrix
-        # Use actions/setup-node because it's faster if no .tool-versions exists
+        # We prefer actions/setup-node to asdf due to performance
+        # However, we must use asdf if .tool-versions exists
         run: |
           NODE_VERSIONS=""
           if [[ ! -f .tool-versions ]]; then
@@ -60,11 +61,6 @@ jobs:
       - uses: actions/checkout@v2
       - if: ${{ inputs.dot_env_path }}
         run: echo "${{ secrets.DOT_ENV }}" > ${{ inputs.dot_env_path }}
-
-      - if: ${{ matrix.node-version }}
-        run: echo ${{ matrix.node-version }} && echo "matrix.node-version is truthy"
-      - if: ${{ !matrix.node-version }}
-        run: echo ${{ matrix.node-version }} && echo "matrix.node-version is falsy"
 
       - if: ${{ matrix.node-version }}
         uses: actions/setup-node@v2

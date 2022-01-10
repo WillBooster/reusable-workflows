@@ -81,7 +81,8 @@ jobs:
         run: echo "${{ secrets.DOT_ENV }}" > ${{ inputs.dot_env_path }}
 
       - id: get-ver
-        # Use asdf if .tool-versions exists
+        # We prefer actions/setup-node to asdf due to performance
+        # However, we must use asdf if .tool-versions exists
         run: |
           if [[ ! -f .tool-versions ]]; then
             echo "::set-output name=node::$(cat .node-version || echo 16)"
