@@ -80,7 +80,18 @@ jobs:
       - if: ${{ inputs.dot_env_path }}
         run: echo "${{ secrets.DOT_ENV }}" > ${{ inputs.dot_env_path }}
 
-      - uses: willbooster/asdf-actions/install@main
+      - id: detect-node-version
+        # Use asdf if .tool-versions exists
+        run: |
+          if [[ ! -f .tool-versions ]]; then
+            echo "::set-output name=version::$(cat .node-version || echo 16)"
+          fi
+      - if: ${{ steps.detect-node-version.outputs.version }}
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ steps.detect-node-version.outputs.version }}
+      - if: ${{ !steps.detect-node-version.outputs.version }}
+        uses: willbooster/asdf-actions/install@main
       - if: ${{ inputs.require_gcloud }}
         run: |
           if ! [[ -f .tool-versions ]] || ! [[ "$(cat .tool-versions)" == *"python"* ]]; then
