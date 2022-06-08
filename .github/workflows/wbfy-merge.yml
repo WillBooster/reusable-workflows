@@ -30,7 +30,7 @@ jobs:
             https://api.github.com/repos/willbooster/firebase-scripts/actions/runs > temp/wbfy.json
 
           cat > temp/wbfy.js << EOF
-          const actions = require('./temp/wbfy.json');
+          const actions = require('./wbfy.json');
           for (const run of actions?.workflow_runs ?? []) {
             if (run.name !== 'Test') continue;
             if (run.head_branch !== 'wbfy') continue;
