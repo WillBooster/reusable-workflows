@@ -56,17 +56,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-berry-
 
-      - run: yarn dlx wbfy --version && yarn dlx wbfy .
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       - run: |
           curl -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/actions/runs > wbfy.temp.json
 
-          curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/willbooster/firebase-scripts/actions/runs
-
-          const actions = require('./actions.json');
+          cat > wbfy.temp.js << EOF
+          const actions = require('./wbfy.temp.json');
           for (const run of actions?.workflow_runs ?? []) {
             if (run.name !== 'Test') continue;
             if (run.head_branch !== 'wbfy') continue;
@@ -79,18 +75,9 @@ jobs:
           }
             break;
           }
+          EOF
 
-
-          git config --global user.email "bot@willbooster.com"
-          git config --global user.name "WillBooster Inc."
-          git checkout -B wbfy
-          git add -A
-          if [[ $(git commit -m "chore: willboosterify this repo" --no-verify) ]]; then
-            git push origin wbfy -f --no-verify
-            curl -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              https://api.github.com/repos/${{ github.repository }}/actions/runs \
-              -X POST -d '{"head":"wbfy","base":"main","title":"chore: willboosterify this repo"}' || true
-          fi
-
-            curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/willbooster/firebase-scripts/actions/runs
+          COMMAND=$(node wbfy.temp.js)
+          echo $COMMAND
+          if [[ $COMMAND == "merge" ]]; then echo yeah1; fi
+          if [[ $COMMAND == "pr" ]]; then echo yeah2; fi
