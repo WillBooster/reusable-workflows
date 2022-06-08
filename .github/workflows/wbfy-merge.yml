@@ -19,7 +19,9 @@ jobs:
     if: ${{ !inputs.target_organization || github.repository_owner == inputs.target_organization }}
     runs-on: ${{ ((!github.event.repository.private || inputs.github_hosted_runner) && 'ubuntu-latest') || (inputs.cpu_arch == 'X64' && fromJSON('["self-hosted", "large", "X64"]')) || (inputs.cpu_arch == 'ARM64' && fromJSON('["self-hosted", "large", "ARM64"]')) || fromJSON('["self-hosted", "large"]') }}
     steps:
-      - run: |
+      - name: Decide action
+        id: decide-action
+        run: |
           mkdir -p temp
 
           curl -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
@@ -45,7 +47,10 @@ jobs:
           }
           EOF
 
-          COMMAND=$(node temp/wbfy.js)
-          echo $COMMAND
-          if [[ $COMMAND == "merge" ]]; then echo yeah1; fi
-          if [[ $COMMAND == "pr" ]]; then echo yeah2; fi
+          echo "::set-output name=action::$(node temp/wbfy.js)";
+
+      - if: ${{ steps.decide-action.outputs.action == 'merge' }}
+        run: echo merge
+
+      - if: ${{ steps.decide-action.outputs.action == 'pr' }}
+        run: echo pr
