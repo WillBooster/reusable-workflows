@@ -45,16 +45,16 @@ jobs:
         id: check-ver
         run: |
           if [[ -f .tool-versions || -f .node-version || -f .python-version ]]; then
-            echo "exist-version-files=1" >> $GITHUB_OUTPUT
+            echo "exist-any-version=1" >> $GITHUB_OUTPUT
           fi
           if [[ -f .node-version || "$(cat .tool-versions)" == *'nodejs'* ]]; then
-            echo "exist-node-version=1" >> $GITHUB_OUTPUT
+            echo "exist-nodejs-version=1" >> $GITHUB_OUTPUT
           fi
-      - if: ${{ !steps.check-ver.outputs.exist-node-version }}
+      - if: ${{ !steps.check-ver.outputs.exist-nodejs-version }}
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version || 18 }}
-      - if: ${{ steps.check-ver.outputs.exist-version-files }}
+      - if: ${{ steps.check-ver.outputs.exist-any-version }}
         uses: willbooster/asdf-actions/install@main
       - name: Show environment information
         id: env-info
