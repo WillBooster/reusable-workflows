@@ -29,7 +29,7 @@ on:
       DOT_ENV:
         required: false
       GH_TOKEN:
-        required: false
+        required: true
       NPM_TOKEN:
         required: false
 jobs:
