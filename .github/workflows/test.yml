@@ -150,17 +150,16 @@ jobs:
       - run: |
           if [[ "$(cat package.json)" == *'"lint-fix":'* ]]; then
             GIT_STATUS=$(git status)
-            yarn lint-fix;
+            yarn lint-fix
             if [[ "$GIT_STATUS" != "$(git status)" ]]; then
               git config --global user.email "bot@willbooster.com"
               git config --global user.name "WillBooster Inc."
               git commit -m "chore: apply lint-fix" -a
-              git push
+              COMMITTED=1
             fi
           elif [[ "$(cat package.json)" == *'"lint":'* ]]; then
             yarn lint
           fi
-      - run: |
           if [[ "$(cat package.json)" == *'"build":'* ]]; then
             GIT_STATUS=$(git status)
             yarn build
@@ -168,8 +167,12 @@ jobs:
               git config --global user.email "bot@willbooster.com"
               git config --global user.name "WillBooster Inc."
               git commit -m "chore: update built files" -a
-              git push
+              COMMITTED=1
             fi
+          fi
+          if [[ $COMMITTED == 1 ]]; then
+            git push origin ${{ github.head_ref }}
+            exit 1
           fi
       - run: |
           if [[ "$(cat package.json)" == *'"test/ci":'* ]]; then
