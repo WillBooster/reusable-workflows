@@ -148,29 +148,19 @@ jobs:
       - run: if [[ "$(cat package.json)" == *'"test/ci-setup":'* ]]; then yarn run test/ci-setup; fi
       - run: if [[ "$(cat package.json)" == *'"typecheck":'* ]]; then yarn typecheck; fi
       - run: |
+          GIT_STATUS=$(git status)
           if [[ "$(cat package.json)" == *'"lint-fix":'* ]]; then
-            GIT_STATUS=$(git status)
             yarn lint-fix
-            if [[ "$GIT_STATUS" != "$(git status)" ]]; then
-              git config --global user.email "bot@willbooster.com"
-              git config --global user.name "WillBooster Inc."
-              git commit -m "chore: apply lint-fix" -a
-              COMMITTED=1
-            fi
           elif [[ "$(cat package.json)" == *'"lint":'* ]]; then
             yarn lint
           fi
           if [[ "$(cat package.json)" == *'"build":'* ]]; then
-            GIT_STATUS=$(git status)
             yarn build
-            if [[ "$GIT_STATUS" != "$(git status)" ]]; then
-              git config --global user.email "bot@willbooster.com"
-              git config --global user.name "WillBooster Inc."
-              git commit -m "chore: update built files" -a
-              COMMITTED=1
-            fi
           fi
-          if [[ $COMMITTED == 1 ]]; then
+          if [[ "$GIT_STATUS" != "$(git status)" ]]; then
+            git config --global user.email "bot@willbooster.com"
+            git config --global user.name "WillBooster Inc."
+            git commit -m "chore: apply changes by lint-fix and build" -a
             git push origin ${{ github.head_ref }}
             exit 1
           fi
