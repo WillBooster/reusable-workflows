@@ -20,26 +20,33 @@ jobs:
     # github.event.repository.private is always true if job is scheduled
     runs-on: ${{ (inputs.github_hosted_runner && 'ubuntu-latest') || (inputs.cpu_arch == 'X64' && fromJSON('["self-hosted", "large", "X64"]')) || (inputs.cpu_arch == 'ARM64' && fromJSON('["self-hosted", "large", "ARM64"]')) || fromJSON('["self-hosted", "large"]') }}
     steps:
+      - name: Setup GitHub CLI
+        run: |
+          echo ${{ secrets.GH_TOKEN }} | gh auth login --with-token
+          gh auth setup-git
+
       - name: Decide action
         id: decide-action
         run: |
+          if [[ -z $(git ls-remote https://github.com/${{ github.repository }} --heads wbfy) ]]; then
+            echo "There is no wbfy branch."
+            exit 0
+          fi
+
           mkdir -p temp
-          curl -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/runs > temp/wbfy.json
+          gh run list -R ${{ github.repository }} -b wbfy -L 10 -w Test --json conclusion,event > temp/wbfy.json
 
           cat > temp/wbfy.js << EOF
-          const actions = require('./wbfy.json');
-          for (const run of actions?.workflow_runs ?? []) {
-            if (run.name !== 'Test') continue;
-            if (run.head_branch !== 'wbfy') continue;
+          const results = require('./wbfy.json');
+          for (const result of results ?? []) {
+            const { event, conclusion } = result;
+            if (event !== 'push') continue;
 
-            if (run.status !== 'completed') break;
-            if (run.conclusion === 'success') {
-            console.log('merge');
-          } else if (run.conclusion === 'failure') {
-            console.log('pr');
-          }
+            if (conclusion === 'success') {
+              console.log('merge');
+            } else if (conclusion === 'failure') {
+              console.log('pr');
+            }
             break;
           }
           EOF
@@ -49,9 +56,10 @@ jobs:
 
       - if: ${{ steps.decide-action.outputs.action == 'merge' }}
         uses: actions/checkout@v3
-        # To trigger other workflows when running 'git push'
         with:
+          # Need histories to merge wbfy
           fetch-depth: 0
+          # To trigger other workflows when running 'git push'
           token: ${{ secrets.GH_TOKEN }}
       - if: ${{ steps.decide-action.outputs.action == 'merge' }}
         # Unset core.hooksPath to disable husky
@@ -69,15 +77,10 @@ jobs:
           HUSKY: 0
 
       - if: ${{ steps.decide-action.outputs.action == 'pr' }}
-        uses: octokit/request-action@v2.x
-        id: repo
-        with:
-          route: GET /repos/${{ github.repository }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      - if: ${{ steps.decide-action.outputs.action == 'pr' }}
         run: |
-          curl -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/pulls \
-            -X POST -d '{"head":"wbfy","base":"${{ fromJson(steps.repo.outputs.data).default_branch }}","title":"chore: willboosterify this repo"}' || true
+          # Since a duplicated PR is not allowed
+          gh pr create -R ${{ github.repository }} --head wbfy --base main --title "chore: willboosterify this repo" --body "" || true
+
+      - name: Clean up
+        if: always()
+        run: gh auth logout -h github.com
