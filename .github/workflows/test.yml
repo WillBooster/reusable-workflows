@@ -26,6 +26,9 @@ on:
       target_organization:
         required: false
         type: string
+      override_test_command:
+        required: false
+        type: string
     secrets:
       DOT_ENV:
         required: false
@@ -81,6 +84,8 @@ jobs:
     env:
       FORCE_COLOR: 3
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
+      HAS_TEST_COMMAND: ${{ !!inputs.override_test_command }}
+      TEST_COMMAND: ${{ inputs.override_test_command }}
     strategy:
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
@@ -173,7 +178,13 @@ jobs:
             exit 1
           fi
       - run: |
-          if [[ "$(cat package.json)" == *'"test/ci":'* ]]; then
+          if [[ "${{ env.HAS_TEST_COMMAND }}" == "true" ]]; then
+            if echo "$TEST_COMMAND" | grep -q -E '^[a-zA-Z0-9:_-]+$'; then
+              yarn run ${{ inputs.override_test_command }}
+            else
+              exit 1
+            fi
+          elif [[ "$(cat package.json)" == *'"test/ci":'* ]]; then
             yarn run test/ci
           elif [[ "$(cat package.json)" == *'"test":'* ]]; then
             yarn test
