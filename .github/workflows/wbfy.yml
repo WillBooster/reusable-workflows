@@ -32,7 +32,7 @@ jobs:
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       WB_ENV: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         # To trigger other workflows when running 'git push'
         with:
           token: ${{ secrets.GH_TOKEN }}
