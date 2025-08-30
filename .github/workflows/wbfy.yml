@@ -52,7 +52,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           check-latest: true
-          node-version: ${{ 22 }}
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
         uses: willbooster/asdf-actions/install@main
       - name: Show environment information
