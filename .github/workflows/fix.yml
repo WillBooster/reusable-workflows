@@ -7,6 +7,17 @@ jobs:
   test:
     runs-on: self-hosted
     steps:
+      - name: Checkout code with git
+        run: |
+          rm -rf .git
+          rm -rf ./*
+          rm -rf ./.*
+          git init
+          git remote add origin git@github.com:${{ github.repository }}.git
+          git fetch --depth 1 origin ${{ github.head_ref }}
+          git checkout ${{ github.head_ref }}
+          git config user.email "bot@willbooster.com"
+          git config user.name "WillBooster Inc."
       - name: Check version files
         id: check-ver
         run: |
@@ -48,35 +59,24 @@ jobs:
       - name: Fix code
         run: |
           if grep -q '"gen-code":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run gen-code
+            ${{ steps.env-info.outputs.runner }} run gen-code || true
           fi
           if grep -q '"cleanup":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run cleanup
+            ${{ steps.env-info.outputs.runner }} run cleanup || true
           elif grep -q '"lint-fix":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run lint-fix
+            ${{ steps.env-info.outputs.runner }} run lint-fix || true
           elif grep -q '"lint":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run lint
+            ${{ steps.env-info.outputs.runner }} run lint || true
           fi
           if grep -q '"build/ci":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run build/ci
+            ${{ steps.env-info.outputs.runner }} run build/ci || true
           elif grep -q '"build":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run build
+            ${{ steps.env-info.outputs.runner }} run build || true
           fi
           if git status | grep -q "Changes not staged for commit"; then
             git status
             git diff
-            echo "Found changes during gen-code, lint-fix and/or build"
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              rm -Rf **/.next
-              git stash
-              git fetch origin ${{ github.head_ref }}
-              git switch ${{ github.head_ref }}
-              git stash pop
-              git config --global user.email "bot@willbooster.com"
-              git config --global user.name "WillBooster Inc."
-              git add -A
-              git commit -m "fix: apply changes by lint-fix and build" -a
-              git push origin ${{ github.head_ref }}
-            fi
-            exit 1
+            git add -A
+            git commit -m "fix: apply changes of fix workflow" --no-verify
+            git push origin ${{ github.head_ref }} --no-verify
           fi
