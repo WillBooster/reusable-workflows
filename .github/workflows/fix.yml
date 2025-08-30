@@ -5,6 +5,7 @@ on:
 
 jobs:
   test:
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: self-hosted
     steps:
       - name: Checkout code with git
