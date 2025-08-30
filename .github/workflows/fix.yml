@@ -2,12 +2,21 @@ name: Fix
 
 on:
   workflow_call:
+    inputs:
+      target_organization:
+        required: false
+        type: string
+
+concurrency:
+  group: fix-${{ github.head_ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (!inputs.target_organization || github.repository_owner == inputs.target_organization) }}
     runs-on: self-hosted
     steps:
+      # To trigger other workflows when running 'git push'
       - name: Checkout code with git
         run: |
           rm -rf .git
@@ -17,8 +26,6 @@ jobs:
           git remote add origin git@github.com:${{ github.repository }}.git
           git fetch --depth 1 origin ${{ github.head_ref }}
           git checkout ${{ github.head_ref }}
-          git config user.email "bot@willbooster.com"
-          git config user.name "WillBooster Inc."
       - name: Check version files
         id: check-ver
         run: |
@@ -81,3 +88,6 @@ jobs:
             git commit -m "fix: apply changes of fix workflow" --no-verify
             git push origin ${{ github.head_ref }} --no-verify
           fi
+        env:
+          HUSKY: 0
+          LEFTHOOK: 0

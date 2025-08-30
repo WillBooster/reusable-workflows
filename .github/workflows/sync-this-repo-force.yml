@@ -7,4 +7,4 @@ jobs:
     with:
       sync_params_without_dest: '--force -v -i node_modules -i renovate.json'
     secrets:
-      DEST_GIT_URL: https://oauth2:${{ secrets.PUBLIC_GH_BOT_PAT }}@github.com/WillBoosterLab/reusable-workflows
+      DEST_GIT_URL: git@github.com:WillBoosterLab/reusable-workflows.git
