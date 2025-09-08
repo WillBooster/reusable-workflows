@@ -36,7 +36,7 @@ jobs:
             echo "exist-nodejs-version=1" >> $GITHUB_OUTPUT
           fi
       - if: ${{ !steps.check-ver.outputs.exist-nodejs-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           check-latest: true
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
