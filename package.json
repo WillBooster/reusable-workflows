@@ -20,12 +20,12 @@
   "devDependencies": {
     "@willbooster/prettier-config": "10.2.0",
     "husky": "9.1.7",
-    "lint-staged": "16.1.6",
+    "lint-staged": "16.2.1",
     "one-way-git-sync": "6.0.26",
     "pinst": "3.0.0",
     "prettier": "3.6.2",
     "prettier-plugin-java": "2.7.5",
     "sort-package-json": "3.4.0"
   },
-  "packageManager": "yarn@4.10.0"
+  "packageManager": "yarn@4.10.3"
 }
