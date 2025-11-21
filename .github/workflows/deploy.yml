@@ -96,7 +96,7 @@ jobs:
       HAS_RAILWAY_API_TOKEN: ${{ !!secrets.RAILWAY_API_TOKEN }}
       WB_ENV: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.branch }}
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
