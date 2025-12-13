@@ -281,7 +281,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: test-artifact
           path: ${{ inputs.artifact_path }}
