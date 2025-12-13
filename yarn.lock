@@ -70,13 +70,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@willbooster/prettier-config@npm:10.2.2":
-  version: 10.2.2
-  resolution: "@willbooster/prettier-config@npm:10.2.2"
+"@willbooster/prettier-config@npm:10.2.4":
+  version: 10.2.4
+  resolution: "@willbooster/prettier-config@npm:10.2.4"
   peerDependencies:
     prettier: ">=3"
     prettier-plugin-java: ">=2.6"
-  checksum: 10c0/37cf0ec7301b51450747fd65dda7e36971c93f17e64b76927007caf0ea45ba43117b30d98ecd9916e6d38350999c01d63cdf6b35f4400d5e3c449d6123b11e5d
+  checksum: 10c0/0216f838b7c62add1d9a988ee955fa7d0e9f458367203a84151741afa53a77201c2937fa4efa816a962050fff938374160177240eda1ea6fdcca2d8c5f29d3d9
   languageName: node
   linkType: hard
 
@@ -696,7 +696,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "reusable-workflows@workspace:."
   dependencies:
-    "@willbooster/prettier-config": "npm:10.2.2"
+    "@willbooster/prettier-config": "npm:10.2.4"
     husky: "npm:9.1.7"
     lint-staged: "npm:16.2.7"
     one-way-git-sync: "npm:6.0.28"
