@@ -33,7 +33,7 @@ jobs:
           git fetch origin ${{ github.head_ref || github.ref_name }}
           git checkout ${{ github.head_ref || github.ref_name }}
 
-      - uses: oven-sh/setup-bun@563911925f97b52638b2d040c6390de93f9f241a
+      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3
         with:
           bun-version: latest
       - name: Show environment information
