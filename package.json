@@ -21,7 +21,7 @@
   "devDependencies": {
     "@willbooster/prettier-config": "10.2.4",
     "husky": "9.1.7",
-    "lint-staged": "16.2.7",
+    "lint-staged": "16.3.1",
     "one-way-git-sync": "6.0.37",
     "pinst": "3.0.0",
     "prettier": "3.8.1",
