@@ -130,7 +130,7 @@ jobs:
         with:
           check-latest: true
       - if: ${{ steps.check-ver.outputs.exist-any-version || steps.check-gcloud.outputs.require-gcloud }}
-        uses: jdx/mise-action@v3
+        uses: jdx/mise-action@v4
         with:
           cache: ${{ (!github.event.repository.private || inputs.github_hosted_runner) && 'true' || 'false' }}
       - if: ${{ steps.check-gcloud.outputs.require-gcloud }}
