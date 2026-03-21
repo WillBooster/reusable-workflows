@@ -135,7 +135,7 @@ jobs:
           cache: ${{ (!github.event.repository.private || inputs.github_hosted_runner) && 'true' || 'false' }}
       - if: ${{ steps.check-gcloud.outputs.require-gcloud }}
         name: Install gcloud with mise
-        uses: nick-fields/retry@9417ab499314dfe692edb043ded2ff9b3f5f0a68
+        uses: nick-fields/retry@dd56f1ca8ca991e2385c18ab6dd36ea7f9fdb55f
         with:
           timeout_minutes: 15
           max_attempts: 3
@@ -198,7 +198,7 @@ jobs:
 
       - if: ${{ env.HAS_FLY_API_TOKEN == 'true' }}
         name: Install fly
-        uses: nick-fields/retry@9417ab499314dfe692edb043ded2ff9b3f5f0a68
+        uses: nick-fields/retry@dd56f1ca8ca991e2385c18ab6dd36ea7f9fdb55f
         with:
           timeout_minutes: 10
           max_attempts: 5
@@ -227,7 +227,7 @@ jobs:
         run: if [[ "$(cat package.json)" == *'"common/ci-setup":'* ]]; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi
 
       - name: Deploy
-        uses: nick-fields/retry@9417ab499314dfe692edb043ded2ff9b3f5f0a68
+        uses: nick-fields/retry@dd56f1ca8ca991e2385c18ab6dd36ea7f9fdb55f
         with:
           timeout_minutes: 60
           max_attempts: ${{ (env.HAS_FLY_API_TOKEN == 'true' || env.HAS_RAILWAY_API_TOKEN == 'true' || env.HAS_GCP_SA_KEY_JSON == 'true') && 20 || 1 }}
