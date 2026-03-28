@@ -71,7 +71,7 @@ jobs:
           node-version: '24.14.1'
           check-latest: true
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
-        uses: jdx/mise-action@v3
+        uses: jdx/mise-action@v4
         with:
           cache: ${{ !contains(runner.labels, 'self-hosted') && 'true' || 'false' }}
       - name: Show environment information
