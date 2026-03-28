@@ -90,7 +90,7 @@ jobs:
             echo "exist-nodejs-version=1" >> $GITHUB_OUTPUT
           fi
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
-        uses: jdx/mise-action@v3
+        uses: jdx/mise-action@v4
         with:
           cache: ${{ (!github.event.repository.private || inputs.github_hosted_runner) && 'true' || 'false' }}
       - name: Show environment information
