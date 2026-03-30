@@ -108,7 +108,7 @@ jobs:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
         node-version: ${{ fromJson(needs.detect-node-version-matrix.outputs.json || '[""]') }}
     steps:
-      - if: ${{ contains(runner.labels, 'self-hosted') }}
+      - if: ${{ runner.environment == 'self-hosted' }}
         run: if [[ ! $(docker ps) ]]; then sudo reboot; fi
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: fkirc/skip-duplicate-actions@04a1aebece824b56e6ad6a401d015479cd1c50b3
@@ -158,7 +158,7 @@ jobs:
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.check-ver.outputs.exist-any-version }}
         uses: jdx/mise-action@v4
         with:
-          cache: ${{ !contains(runner.labels, 'self-hosted') && 'true' || 'false' }}
+          cache: ${{ runner.environment != 'self-hosted' && 'true' || 'false' }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Show environment information
         id: env-info

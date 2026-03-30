@@ -96,7 +96,7 @@ jobs:
       HAS_RAILWAY_API_TOKEN: ${{ !!secrets.RAILWAY_API_TOKEN }}
       WB_ENV: ${{ inputs.environment }}
     steps:
-      - if: ${{ contains(runner.labels, 'self-hosted') }}
+      - if: ${{ runner.environment == 'self-hosted' }}
         run: if [[ ! $(docker ps) ]]; then sudo reboot; fi
       - uses: actions/checkout@v6
         with:
@@ -134,7 +134,7 @@ jobs:
       - if: ${{ steps.check-ver.outputs.exist-any-version || steps.check-gcloud.outputs.require-gcloud }}
         uses: jdx/mise-action@v4
         with:
-          cache: ${{ !contains(runner.labels, 'self-hosted') && 'true' || 'false' }}
+          cache: ${{ runner.environment != 'self-hosted' && 'true' || 'false' }}
       - if: ${{ steps.check-gcloud.outputs.require-gcloud }}
         name: Install gcloud with mise
         uses: nick-fields/retry@dd56f1ca8ca991e2385c18ab6dd36ea7f9fdb55f

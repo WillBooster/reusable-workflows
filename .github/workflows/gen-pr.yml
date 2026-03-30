@@ -98,7 +98,7 @@ jobs:
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
         uses: jdx/mise-action@v4
         with:
-          cache: ${{ !contains(runner.labels, 'self-hosted') && 'true' || 'false' }}
+          cache: ${{ runner.environment != 'self-hosted' && 'true' || 'false' }}
       - name: Show environment information
         id: env-info
         # https://stackoverflow.com/a/677212
