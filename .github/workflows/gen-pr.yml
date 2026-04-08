@@ -65,6 +65,8 @@ on:
         required: false
       CLAUDE_CODE_OAUTH_TOKEN:
         required: false
+      GH_PKG_READ_TOKEN:
+        required: false
 
 jobs:
   generate-pr:
@@ -132,6 +134,8 @@ jobs:
           else
             ${{ steps.env-info.outputs.runner }} install --no-immutable || true # To ignore postinstall errors
           fi
+        env:
+          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
       - name: Remove .next directory
         run: rm -Rf .next
       - name: Run "test/ci-setup" npm script if exists

@@ -39,6 +39,8 @@ on:
     secrets:
       DOT_ENV:
         required: false
+      GH_PKG_READ_TOKEN:
+        required: false
       GH_TOKEN:
         required: true
       NPM_TOKEN:
@@ -205,6 +207,8 @@ jobs:
           else
             ${{ steps.env-info.outputs.runner }} install --no-immutable || true # To ignore postinstall errors
           fi
+        env:
+          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "common/ci-setup" npm script if exists
         run: if grep -q '"common/ci-setup":' package.json; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi

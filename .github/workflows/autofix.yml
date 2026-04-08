@@ -70,6 +70,8 @@ jobs:
           else
             ${{ steps.env-info.outputs.runner }} install || true # To ignore postinstall errors
           fi
+        env:
+          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
 
       - name: Fix code
         run: |

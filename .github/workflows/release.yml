@@ -38,7 +38,7 @@ on:
         required: true
       NPM_TOKEN:
         required: false
-      GH_PACKAGES_TOKEN:
+      GH_PKG_READ_TOKEN:
         required: false
 
 jobs:
@@ -114,6 +114,8 @@ jobs:
           else
             ${{ steps.env-info.outputs.runner }} install || true # To ignore postinstall errors
           fi
+        env:
+          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
@@ -131,7 +133,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
           HUSKY: 0
           LEFTHOOK: 0
 
