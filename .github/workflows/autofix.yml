@@ -6,6 +6,9 @@ on:
       target_organization:
         required: false
         type: string
+    secrets:
+      GH_PKG_READ_TOKEN:
+        required: false
 
 concurrency:
   group: autofix-${{ github.head_ref }}
