@@ -5,6 +5,8 @@ const path = require('node:path');
 
 const MaxFilesPerRequest = 100;
 const PkgPreflightUrl = 'https://pkg-preflight.up.railway.app';
+const PkgPreflightRetryAttempts = 5;
+const PkgPreflightRetryDelaySeconds = 10;
 const KnownLockfileNames = new Set([
   'constraints.txt',
   'go.sum',
@@ -189,7 +191,11 @@ function postRequest(requestPath) {
     [
       '--fail-with-body',
       '--max-time',
-      '60',
+      '120',
+      '--retry',
+      String(PkgPreflightRetryAttempts),
+      '--retry-delay',
+      String(PkgPreflightRetryDelaySeconds),
       '--show-error',
       '--silent',
       `${PkgPreflightUrl}/rpc/inspectLockfileDiff`,
