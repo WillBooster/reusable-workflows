@@ -304,9 +304,9 @@ jobs:
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.GITHUB_TOKEN != '' && github.event_name == 'pull_request' }}
         name: Test release script
         run: |
-          if [[ "$(jq -r '.dependencies["semantic-release"] != null or .devDependencies["semantic-release"] != null' package.json)" == "true" ]]; then
+          if grep -q '"semantic-release":' package.json; then
             git switch -C "$(jq -r ".branches[0]" .releaserc.json)"
-            if [[ "$(jq -r '.scripts["release-test"] != null' package.json)" == "true" ]]; then
+            if grep -q '"release-test":' package.json; then
               ${{ steps.env-info.outputs.runner }} run release-test
             else
               ${{ steps.env-info.outputs.runner }} semantic-release --dry-run
