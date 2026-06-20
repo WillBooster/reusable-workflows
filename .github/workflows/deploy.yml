@@ -100,7 +100,7 @@ jobs:
     steps:
       - if: ${{ runner.environment == 'self-hosted' }}
         run: if [[ ! $(docker ps) ]]; then sudo reboot; fi
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.branch }}
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
