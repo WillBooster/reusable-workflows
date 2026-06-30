@@ -25,7 +25,7 @@
     "one-way-git-sync": "6.0.43",
     "pinst": "3.0.0",
     "prettier": "3.8.4",
-    "prettier-plugin-java": "2.9.7",
+    "prettier-plugin-java": "2.10.1",
     "sort-package-json": "4.0.0"
   },
   "packageManager": "yarn@4.17.0"
