@@ -308,6 +308,9 @@ jobs:
             git switch -C "$(jq -r ".branches[0]" .releaserc.json)"
             if grep -q '"release-test":' package.json; then
               ${{ steps.env-info.outputs.runner }} run release-test
+            elif [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
+              # Run semantic-release with Node because it checks Node.js runtime requirements.
+              node node_modules/semantic-release/bin/semantic-release.js --dry-run
             else
               ${{ steps.env-info.outputs.runner }} semantic-release --dry-run
             fi
