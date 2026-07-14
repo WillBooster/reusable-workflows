@@ -80,6 +80,8 @@ jobs:
       FORCE_COLOR: 3
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
+      HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
+      HAS_FILE_CONTENT_2: ${{ !!secrets.FILE_CONTENT_2 }}
       WB_ENV: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v7.0.0
@@ -92,12 +94,12 @@ jobs:
         env:
           DOT_ENV: ${{ secrets.DOT_ENV }}
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
-      - if: ${{ inputs.file_path_1 }}
+      - if: ${{ inputs.file_path_1 && env.HAS_FILE_CONTENT_1 == 'true' }}
         run: printf '%s\n' "$FILE_CONTENT_1" > "$FILE_PATH_1"
         env:
           FILE_CONTENT_1: ${{ secrets.FILE_CONTENT_1 }}
           FILE_PATH_1: ${{ inputs.file_path_1 }}
-      - if: ${{ inputs.file_path_2 }}
+      - if: ${{ inputs.file_path_2 && env.HAS_FILE_CONTENT_2 == 'true' }}
         run: printf '%s\n' "$FILE_CONTENT_2" > "$FILE_PATH_2"
         env:
           FILE_CONTENT_2: ${{ secrets.FILE_CONTENT_2 }}
@@ -192,10 +194,11 @@ jobs:
           WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
           node -e '
             const { MENTION = "", REPO_LINK = "", COMMAND = "", ENVIRONMENT = "", WORKFLOW_URL = "" } = process.env;
+            const environmentSuffix = ENVIRONMENT ? ` (${ENVIRONMENT})` : "";
             console.log(JSON.stringify({
               username: "WillBooster Bot",
               avatar_url: "https://avatars.githubusercontent.com/u/98675783",
-              content: `${MENTION} ${REPO_LINK} の ${COMMAND} (${ENVIRONMENT}) が[失敗](${WORKFLOW_URL})しました！！！`,
+              content: `${MENTION} ${REPO_LINK} の ${COMMAND}${environmentSuffix} が[失敗](${WORKFLOW_URL})しました！！！`,
             }));
           ' > "$RUNNER_TEMP/discord-payload.json"
           curl --fail-with-body -X POST -H "Content-Type: application/json" \
@@ -210,10 +213,11 @@ jobs:
       - if: ${{ always() }}
         name: Delete credential files
         run: |
-          : # Delete the dotenv only when this run wrote it: some private repos commit .env.
+          : # Delete each file only when this run actually wrote it (the caller may commit
+          : # files at these paths and run without the corresponding secret).
           if [[ "$HAS_DOT_ENV" == "true" ]]; then rm -f -- "$DOT_ENV_PATH"; fi
-          if [[ -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
-          if [[ -n "$FILE_PATH_2" ]]; then rm -f -- "$FILE_PATH_2"; fi
+          if [[ "$HAS_FILE_CONTENT_1" == "true" && -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
+          if [[ "$HAS_FILE_CONTENT_2" == "true" && -n "$FILE_PATH_2" ]]; then rm -f -- "$FILE_PATH_2"; fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
           FILE_PATH_1: ${{ inputs.file_path_1 }}

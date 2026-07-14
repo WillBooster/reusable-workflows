@@ -92,13 +92,13 @@ jobs:
       FORCE_COLOR: 3
       # constants
       PYTHON_VERSION: 3.13.9
-      # Unique per run: shared self-hosted runners can execute jobs concurrently.
-      GOOGLE_APPLICATION_CREDENTIALS: /tmp/credentials-${{ github.run_id }}-${{ github.run_attempt }}.json
       # arguments
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FLY_API_TOKEN: ${{ !!secrets.FLY_API_TOKEN }}
       HAS_GCP_SA_KEY_JSON: ${{ !!secrets.GCP_SA_KEY_JSON }}
+      HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
+      HAS_FILE_CONTENT_2: ${{ !!secrets.FILE_CONTENT_2 }}
       HAS_GCP_SA_KEY_JSON_FOR_FIREBASE: ${{ !!secrets.GCP_SA_KEY_JSON_FOR_FIREBASE }}
       HAS_RAILWAY_API_TOKEN: ${{ !!secrets.RAILWAY_API_TOKEN }}
       WB_ENV: ${{ inputs.environment }}
@@ -115,12 +115,12 @@ jobs:
         env:
           DOT_ENV: ${{ secrets.DOT_ENV }}
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
-      - if: ${{ inputs.file_path_1 }}
+      - if: ${{ inputs.file_path_1 && env.HAS_FILE_CONTENT_1 == 'true' }}
         run: printf '%s\n' "$FILE_CONTENT_1" > "$FILE_PATH_1"
         env:
           FILE_CONTENT_1: ${{ secrets.FILE_CONTENT_1 }}
           FILE_PATH_1: ${{ inputs.file_path_1 }}
-      - if: ${{ inputs.file_path_2 }}
+      - if: ${{ inputs.file_path_2 && env.HAS_FILE_CONTENT_2 == 'true' }}
         run: printf '%s\n' "$FILE_CONTENT_2" > "$FILE_PATH_2"
         env:
           FILE_CONTENT_2: ${{ secrets.FILE_CONTENT_2 }}
@@ -254,7 +254,14 @@ jobs:
 
       - if: ${{ env.HAS_GCP_SA_KEY_JSON_FOR_FIREBASE == 'true' }}
         name: Create credential file for Firebase
-        run: echo '${{ secrets.GCP_SA_KEY_JSON_FOR_FIREBASE }}' > $GOOGLE_APPLICATION_CREDENTIALS
+        # mktemp under RUNNER_TEMP keeps the path job-unique (matrix jobs share run_id) and
+        # the secret goes through env + printf so its content cannot break out of the shell.
+        run: |
+          GOOGLE_APPLICATION_CREDENTIALS="$(mktemp "$RUNNER_TEMP/credentials.XXXXXX")"
+          printf '%s\n' "$GCP_SA_KEY_JSON_FOR_FIREBASE" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS" >> "$GITHUB_ENV"
+        env:
+          GCP_SA_KEY_JSON_FOR_FIREBASE: ${{ secrets.GCP_SA_KEY_JSON_FOR_FIREBASE }}
 
       - name: Run "common/ci-setup" npm script if exists
         run: if [[ "$(cat package.json)" == *'"common/ci-setup":'* ]]; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi
@@ -295,6 +302,8 @@ jobs:
         env:
           SERVER_URL: ${{ inputs.server_url }}
 
+      # always(): runs even when an earlier step failed, so the failure notification below
+      # always has REPO_LINK/COMMIT_LINK/WORKFLOW_URL available.
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && always() }}
         run: |
           echo "REPO_LINK=[${{ github.event.repository.name }}](${{ github.event.repository.html_url }})" >> $GITHUB_ENV
@@ -354,11 +363,12 @@ jobs:
       - if: ${{ always() }}
         name: Delete credential files
         run: |
-          rm -f -- "$GOOGLE_APPLICATION_CREDENTIALS"
-          : # Delete the dotenv only when this run wrote it: some private repos commit .env.
+          if [[ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then rm -f -- "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          : # Delete each file only when this run actually wrote it (the caller may commit
+          : # files at these paths and run without the corresponding secret).
           if [[ "$HAS_DOT_ENV" == "true" ]]; then rm -f -- "$DOT_ENV_PATH"; fi
-          if [[ -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
-          if [[ -n "$FILE_PATH_2" ]]; then rm -f -- "$FILE_PATH_2"; fi
+          if [[ "$HAS_FILE_CONTENT_1" == "true" && -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
+          if [[ "$HAS_FILE_CONTENT_2" == "true" && -n "$FILE_PATH_2" ]]; then rm -f -- "$FILE_PATH_2"; fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
           FILE_PATH_1: ${{ inputs.file_path_1 }}

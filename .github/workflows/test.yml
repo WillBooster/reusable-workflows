@@ -268,11 +268,13 @@ jobs:
           elif grep -q '"build":' package.json; then
             ${{ steps.env-info.outputs.runner }} run build
           fi
-          if git status | grep -q "Changes not staged for commit"; then
+          : # Exclude the dotenv file: when dot_env_path names a tracked file, the DOT_ENV
+          : # secret written over it must never be committed and pushed by this autofix.
+          if [[ -n "$(git status --porcelain -- . ":(exclude)$DOT_ENV_PATH")" ]]; then
             git status
-            git diff
+            git diff -- . ":(exclude)$DOT_ENV_PATH"
             if [[ "${{ github.event.repository.private }}" == "true" ]]; then
-              git add -A
+              git add -A -- . ":(exclude)$DOT_ENV_PATH"
               git commit -m "fix: apply changes of autofix workflow" --no-verify
               git push origin ${{ github.head_ref }} --no-verify
             else
