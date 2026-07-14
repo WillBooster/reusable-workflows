@@ -32,6 +32,10 @@ on:
       github_hosted_runner:
         required: false
         type: boolean
+      health_check_path:
+        # Path appended to server_url for a post-deploy health check (e.g., /api/ping). Empty disables the check.
+        required: false
+        type: string
       ignore_renovate:
         required: false
         type: boolean
@@ -262,6 +266,23 @@ jobs:
           RAILWAY_PROJECT_ID: ${{ inputs.railway_project_id }}
           RAILWAY_SERVICE_ID: ${{ inputs.railway_service_id }}
 
+      - if: ${{ inputs.health_check_path }}
+        name: Check health of deployed server
+        run: |
+          url="${SERVER_URL%/}${{ inputs.health_check_path }}"
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 10 "$url" > /dev/null; then
+              echo "Health check passed on attempt $i: $url"
+              exit 0
+            fi
+            echo "Health check attempt $i/30 failed. Retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "Health check failed: $url"
+          exit 1
+        env:
+          SERVER_URL: ${{ inputs.server_url }}
+
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && always() }}
         run: |
           echo "REPO_LINK=[${{ github.event.repository.name }}](${{ github.event.repository.html_url }})" >> $GITHUB_ENV
@@ -273,7 +294,7 @@ jobs:
                --data "{
                   \"username\": \"WillBooster Bot\",
                   \"avatar_url\": \"https://avatars.githubusercontent.com/u/98675783\",
-                  \"content\": \"${{inputs.failure_mention_on_discrod}} $REPO_LINK の${{inputs.environment}}環境 (${{ inputs.server_url }}) を $COMMIT_LINK に更新しようとして、[失敗]($WORKFLOW_URL)しました！！！\"
+                  \"content\": \"${{inputs.failure_mention_on_discord}} $REPO_LINK の${{inputs.environment}}環境 (${{ inputs.server_url }}) を $COMMIT_LINK に更新しようとして、[失敗]($WORKFLOW_URL)しました！！！\"
                }" \
                ${{ secrets.DISCORD_WEBHOOK_URL }}
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && inputs.environment != 'production' }}
