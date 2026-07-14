@@ -311,56 +311,39 @@ jobs:
           VERSION_FOR_LINK="${WB_VERSION:-$(git describe --always --tags 2> /dev/null || echo '${{ github.sha }}')}"
           echo "COMMIT_LINK=[$VERSION_FOR_LINK](https://github.com/${{ github.repository }}/commits/$VERSION_FOR_LINK)" >> $GITHUB_ENV
           echo "WORKFLOW_URL=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_ENV
-      # Payloads are built with node's JSON.stringify from env values so that quotes or
-      # backslashes in inputs can neither break the JSON nor inject shell commands.
+      # Payload contents are JSON-escaped by GitHub's toJSON expression and inserted with
+      # printf, so quotes/backslashes in inputs cannot break the JSON or the shell, and the
+      # failure notifier needs no provisioned tools (an early failure may precede setup-node).
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && failure() }}
         run: |
-          node -e '
-            const { MENTION = "", REPO_LINK = "", ENVIRONMENT = "", SERVER_URL = "", COMMIT_LINK = "", WORKFLOW_URL = "" } = process.env;
-            console.log(JSON.stringify({
-              username: "WillBooster Bot",
-              avatar_url: "https://avatars.githubusercontent.com/u/98675783",
-              content: `${MENTION} ${REPO_LINK} の${ENVIRONMENT}環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しようとして、[失敗](${WORKFLOW_URL})しました！！！`,
-            }));
-          ' > "$RUNNER_TEMP/discord-payload.json"
+          printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
           curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
-          MENTION: ${{ inputs.failure_mention_on_discord }}
-          ENVIRONMENT: ${{ inputs.environment }}
-          SERVER_URL: ${{ inputs.server_url }}
+          CONTENT_JSON: ${{ toJSON(format('{0} {1} の{2}環境 ({3}) を {4} に更新しようとして、[失敗]({5})しました！！！', inputs.failure_mention_on_discord, env.REPO_LINK, inputs.environment, inputs.server_url, env.COMMIT_LINK, env.WORKFLOW_URL)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && inputs.environment != 'production' }}
         run: |
-          node -e '
-            const { REPO_LINK = "", ENVIRONMENT = "", SERVER_URL = "", COMMIT_LINK = "" } = process.env;
-            console.log(JSON.stringify({
-              username: "WillBooster Bot",
-              avatar_url: "https://avatars.githubusercontent.com/u/98675783",
-              content: `${REPO_LINK} の${ENVIRONMENT}環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しました。`,
-            }));
-          ' > "$RUNNER_TEMP/discord-payload.json"
+          printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
           curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
-          ENVIRONMENT: ${{ inputs.environment }}
-          SERVER_URL: ${{ inputs.server_url }}
+          CONTENT_JSON: ${{ toJSON(format('{0} の{1}環境 ({2}) を {3} に更新しました。', env.REPO_LINK, inputs.environment, inputs.server_url, env.COMMIT_LINK)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && inputs.environment == 'production' }}
         run: |
-          node -e '
-            const { REPO_LINK = "", SERVER_URL = "", COMMIT_LINK = "" } = process.env;
-            console.log(JSON.stringify({
-              username: "WillBooster Bot",
-              avatar_url: "https://avatars.githubusercontent.com/u/98675783",
-              content: `!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n${REPO_LINK} の本番環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しました。\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`,
-            }));
-          ' > "$RUNNER_TEMP/discord-payload.json"
+          CONTENT_JSON="${CONTENT_JSON//<br>/\\n}"
+          printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
           curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
-          SERVER_URL: ${{ inputs.server_url }}
+          # <br> placeholders become JSON \n escapes in the run block (GitHub expression
+          # literals cannot contain real newlines).
+          CONTENT_JSON: ${{ toJSON(format('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<br>{0} の本番環境 ({1}) を {2} に更新しました。<br>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!', env.REPO_LINK, inputs.server_url, env.COMMIT_LINK)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
 
       - if: ${{ always() }}
         name: Delete credential files

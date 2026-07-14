@@ -188,29 +188,18 @@ jobs:
           COMMAND_ARGS: ${{ inputs.command_args }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
 
-      # The payload is built with node's JSON.stringify from env values so that quotes or
-      # backslashes in inputs can neither break the JSON nor inject shell commands.
+      # The payload content is JSON-escaped by GitHub's toJSON expression and inserted with
+      # printf, so quotes/backslashes in inputs cannot break the JSON or the shell, and the
+      # notifier needs no provisioned tools (an early failure may precede setup-node/mise).
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && failure() }}
         run: |
-          REPO_LINK="[${{ github.event.repository.name }}](${{ github.event.repository.html_url }})" \
-          WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-          node -e '
-            const { MENTION = "", REPO_LINK = "", COMMAND = "", ENVIRONMENT = "", WORKFLOW_URL = "" } = process.env;
-            const environmentSuffix = ENVIRONMENT ? ` (${ENVIRONMENT})` : "";
-            console.log(JSON.stringify({
-              username: "WillBooster Bot",
-              avatar_url: "https://avatars.githubusercontent.com/u/98675783",
-              content: `${MENTION} ${REPO_LINK} の ${COMMAND}${environmentSuffix} が[失敗](${WORKFLOW_URL})しました！！！`,
-            }));
-          ' > "$RUNNER_TEMP/discord-payload.json"
-          curl --fail-with-body -X POST -H "Content-Type: application/json" \
-               --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
+          curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
-          MENTION: ${{ inputs.failure_mention_on_discord }}
-          COMMAND: ${{ inputs.command }}
-          ENVIRONMENT: ${{ inputs.environment }}
+          CONTENT_JSON: ${{ toJSON(format('{0} [{1}]({2}) の {3}{4} が[失敗](https://github.com/{5}/actions/runs/{6})しました！！！', inputs.failure_mention_on_discord, github.event.repository.name, github.event.repository.html_url, inputs.command, (inputs.environment && format(' ({0})', inputs.environment)) || '', github.repository, github.run_id)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
 
       - if: ${{ always() }}
         name: Delete credential files
