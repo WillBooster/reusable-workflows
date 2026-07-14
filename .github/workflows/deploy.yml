@@ -323,7 +323,7 @@ jobs:
               content: `${MENTION} ${REPO_LINK} の${ENVIRONMENT}環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しようとして、[失敗](${WORKFLOW_URL})しました！！！`,
             }));
           ' > "$RUNNER_TEMP/discord-payload.json"
-          curl -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           MENTION: ${{ inputs.failure_mention_on_discord }}
@@ -340,7 +340,7 @@ jobs:
               content: `${REPO_LINK} の${ENVIRONMENT}環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しました。`,
             }));
           ' > "$RUNNER_TEMP/discord-payload.json"
-          curl -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           ENVIRONMENT: ${{ inputs.environment }}
@@ -356,7 +356,7 @@ jobs:
               content: `!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n${REPO_LINK} の本番環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しました。\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`,
             }));
           ' > "$RUNNER_TEMP/discord-payload.json"
-          curl -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           SERVER_URL: ${{ inputs.server_url }}

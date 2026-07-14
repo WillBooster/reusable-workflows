@@ -269,9 +269,14 @@ jobs:
             ${{ steps.env-info.outputs.runner }} run build
           fi
           : # Exclude the dotenv file when the DOT_ENV secret overwrote it: a secret written
-          : # over a tracked file must never be committed and pushed by this autofix.
+          : # over a tracked file must never be committed and pushed by this autofix. Also
+          : # unstage it in case a caller-defined script staged it (git add -A in ci-setup etc.),
+          : # since the pathspec exclusion below cannot remove an existing index entry.
           excludes=()
-          if [[ "$HAS_DOT_ENV" == "true" ]]; then excludes=(":(exclude)$DOT_ENV_PATH"); fi
+          if [[ "$HAS_DOT_ENV" == "true" ]]; then
+            excludes=(":(exclude)$DOT_ENV_PATH")
+            git restore --staged -- "$DOT_ENV_PATH" 2> /dev/null || true
+          fi
           if [[ -n "$(git status --porcelain -- . "${excludes[@]}")" ]]; then
             git status
             git diff -- . "${excludes[@]}"
