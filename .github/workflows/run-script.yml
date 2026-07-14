@@ -159,12 +159,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-v1-
       - name: Install dependencies
+        # Unlike deploy.yml/test.yml, install failures are NOT suppressed here: a maintenance
+        # script run against a half-installed dependency graph could silently misbehave.
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
             # Because bun sometimes fails to install private repos (but, update is okay)
             bun install
           else
-            ${{ steps.env-info.outputs.runner }} install || true # To ignore postinstall errors
+            ${{ steps.env-info.outputs.runner }} install
           fi
         env:
           GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
