@@ -138,8 +138,12 @@ jobs:
             git checkout -B ${{ github.head_ref || github.ref_name }} origin/${{ github.head_ref || github.ref_name }}
           fi
           git reset --hard origin/${{ github.head_ref || github.ref_name }}
+      # The secret is passed via env and written with printf so that quotes or backslashes in
+      # its value cannot break out of the shell command.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
-        run: echo '${{ secrets.DOT_ENV }}' > ${{ inputs.dot_env_path }}
+        run: printf '%s\n' "$DOT_ENV" > "${{ inputs.dot_env_path }}"
+        env:
+          DOT_ENV: ${{ secrets.DOT_ENV }}
 
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Check version files
@@ -329,6 +333,11 @@ jobs:
           name: test-artifact
           path: ${{ inputs.artifact_path }}
 
+      # Delete only when the DOT_ENV secret was actually written: dot_env_path defaults to
+      # .env, which some private repos commit.
+      - if: ${{ always() && env.HAS_DOT_ENV == 'true' }}
+        name: Delete credential files
+        run: rm -f -- "${{ inputs.dot_env_path }}"
       - if: ${{ always() }}
         name: Clean up pyc files, docker and ports
         run: |
