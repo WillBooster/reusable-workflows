@@ -18,7 +18,8 @@ on:
         required: true
         type: string
       command_args:
-        # Extra arguments appended to the script invocation (after `--`).
+        # Extra arguments appended to the script invocation. Whitespace-split; arguments
+        # containing spaces or shell metacharacters are not supported.
         required: false
         type: string
       cpu_arch:
@@ -87,17 +88,20 @@ jobs:
       # Secrets are passed via env and written with printf so that quotes or backslashes in
       # their values cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
-        run: printf '%s\n' "$DOT_ENV" > "${{ inputs.dot_env_path }}"
+        run: printf '%s\n' "$DOT_ENV" > "$DOT_ENV_PATH"
         env:
           DOT_ENV: ${{ secrets.DOT_ENV }}
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
       - if: ${{ inputs.file_path_1 }}
-        run: printf '%s\n' "$FILE_CONTENT_1" > "${{ inputs.file_path_1 }}"
+        run: printf '%s\n' "$FILE_CONTENT_1" > "$FILE_PATH_1"
         env:
           FILE_CONTENT_1: ${{ secrets.FILE_CONTENT_1 }}
+          FILE_PATH_1: ${{ inputs.file_path_1 }}
       - if: ${{ inputs.file_path_2 }}
-        run: printf '%s\n' "$FILE_CONTENT_2" > "${{ inputs.file_path_2 }}"
+        run: printf '%s\n' "$FILE_CONTENT_2" > "$FILE_PATH_2"
         env:
           FILE_CONTENT_2: ${{ secrets.FILE_CONTENT_2 }}
+          FILE_PATH_2: ${{ inputs.file_path_2 }}
 
       - name: Check version files
         id: check-ver
@@ -173,11 +177,8 @@ jobs:
         # Step-level so that the always() credential cleanup below still runs on timeout.
         timeout-minutes: ${{ inputs.timeout_minutes }}
         run: |
-          if [[ -n "$COMMAND_ARGS" ]]; then
-            ${{ steps.env-info.outputs.runner }} run "$COMMAND" -- $COMMAND_ARGS
-          else
-            ${{ steps.env-info.outputs.runner }} run "$COMMAND"
-          fi
+          set -f # COMMAND_ARGS is whitespace-split into arguments; no glob expansion.
+          ${{ steps.env-info.outputs.runner }} run "$COMMAND" $COMMAND_ARGS
         env:
           COMMAND: ${{ inputs.command }}
           COMMAND_ARGS: ${{ inputs.command_args }}
@@ -190,16 +191,16 @@ jobs:
           REPO_LINK="[${{ github.event.repository.name }}](${{ github.event.repository.html_url }})" \
           WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
           node -e '
-            const { MENTION, REPO_LINK, COMMAND, ENVIRONMENT, WORKFLOW_URL } = process.env;
+            const { MENTION = "", REPO_LINK = "", COMMAND = "", ENVIRONMENT = "", WORKFLOW_URL = "" } = process.env;
             console.log(JSON.stringify({
               username: "WillBooster Bot",
               avatar_url: "https://avatars.githubusercontent.com/u/98675783",
               content: `${MENTION} ${REPO_LINK} の ${COMMAND} (${ENVIRONMENT}) が[失敗](${WORKFLOW_URL})しました！！！`,
             }));
-          ' > /tmp/discord-payload.json
+          ' > "$RUNNER_TEMP/discord-payload.json"
           curl --fail-with-body -X POST -H "Content-Type: application/json" \
-               --data @/tmp/discord-payload.json "$DISCORD_WEBHOOK_URL"
-          rm -f /tmp/discord-payload.json
+               --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           MENTION: ${{ inputs.failure_mention_on_discord }}
           COMMAND: ${{ inputs.command }}
@@ -209,6 +210,11 @@ jobs:
       - if: ${{ always() }}
         name: Delete credential files
         run: |
-          rm -f -- "${{ inputs.dot_env_path }}"
-          if [[ -n "${{ inputs.file_path_1 }}" ]]; then rm -f -- "${{ inputs.file_path_1 }}"; fi
-          if [[ -n "${{ inputs.file_path_2 }}" ]]; then rm -f -- "${{ inputs.file_path_2 }}"; fi
+          : # Delete the dotenv only when this run wrote it: some private repos commit .env.
+          if [[ "$HAS_DOT_ENV" == "true" ]]; then rm -f -- "$DOT_ENV_PATH"; fi
+          if [[ -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
+          if [[ -n "$FILE_PATH_2" ]]; then rm -f -- "$FILE_PATH_2"; fi
+        env:
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
+          FILE_PATH_1: ${{ inputs.file_path_1 }}
+          FILE_PATH_2: ${{ inputs.file_path_2 }}

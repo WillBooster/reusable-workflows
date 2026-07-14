@@ -92,7 +92,8 @@ jobs:
       FORCE_COLOR: 3
       # constants
       PYTHON_VERSION: 3.13.9
-      GOOGLE_APPLICATION_CREDENTIALS: /tmp/credentials.json
+      # Unique per run: shared self-hosted runners can execute jobs concurrently.
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/credentials-${{ github.run_id }}-${{ github.run_attempt }}.json
       # arguments
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
@@ -110,17 +111,20 @@ jobs:
       # Secrets are passed via env and written with printf so that quotes or backslashes in
       # their values cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
-        run: printf '%s\n' "$DOT_ENV" > "${{ inputs.dot_env_path }}"
+        run: printf '%s\n' "$DOT_ENV" > "$DOT_ENV_PATH"
         env:
           DOT_ENV: ${{ secrets.DOT_ENV }}
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
       - if: ${{ inputs.file_path_1 }}
-        run: printf '%s\n' "$FILE_CONTENT_1" > "${{ inputs.file_path_1 }}"
+        run: printf '%s\n' "$FILE_CONTENT_1" > "$FILE_PATH_1"
         env:
           FILE_CONTENT_1: ${{ secrets.FILE_CONTENT_1 }}
+          FILE_PATH_1: ${{ inputs.file_path_1 }}
       - if: ${{ inputs.file_path_2 }}
-        run: printf '%s\n' "$FILE_CONTENT_2" > "${{ inputs.file_path_2 }}"
+        run: printf '%s\n' "$FILE_CONTENT_2" > "$FILE_PATH_2"
         env:
           FILE_CONTENT_2: ${{ secrets.FILE_CONTENT_2 }}
+          FILE_PATH_2: ${{ inputs.file_path_2 }}
 
       - name: Check version files
         id: check-ver
@@ -301,15 +305,15 @@ jobs:
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && failure() }}
         run: |
           node -e '
-            const { MENTION, REPO_LINK, ENVIRONMENT, SERVER_URL, COMMIT_LINK, WORKFLOW_URL } = process.env;
+            const { MENTION = "", REPO_LINK = "", ENVIRONMENT = "", SERVER_URL = "", COMMIT_LINK = "", WORKFLOW_URL = "" } = process.env;
             console.log(JSON.stringify({
               username: "WillBooster Bot",
               avatar_url: "https://avatars.githubusercontent.com/u/98675783",
               content: `${MENTION} ${REPO_LINK} の${ENVIRONMENT}環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しようとして、[失敗](${WORKFLOW_URL})しました！！！`,
             }));
-          ' > /tmp/discord-payload.json
-          curl -X POST -H "Content-Type: application/json" --data @/tmp/discord-payload.json "$DISCORD_WEBHOOK_URL"
-          rm -f /tmp/discord-payload.json
+          ' > "$RUNNER_TEMP/discord-payload.json"
+          curl -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           MENTION: ${{ inputs.failure_mention_on_discord }}
           ENVIRONMENT: ${{ inputs.environment }}
@@ -318,15 +322,15 @@ jobs:
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && inputs.environment != 'production' }}
         run: |
           node -e '
-            const { REPO_LINK, ENVIRONMENT, SERVER_URL, COMMIT_LINK } = process.env;
+            const { REPO_LINK = "", ENVIRONMENT = "", SERVER_URL = "", COMMIT_LINK = "" } = process.env;
             console.log(JSON.stringify({
               username: "WillBooster Bot",
               avatar_url: "https://avatars.githubusercontent.com/u/98675783",
               content: `${REPO_LINK} の${ENVIRONMENT}環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しました。`,
             }));
-          ' > /tmp/discord-payload.json
-          curl -X POST -H "Content-Type: application/json" --data @/tmp/discord-payload.json "$DISCORD_WEBHOOK_URL"
-          rm -f /tmp/discord-payload.json
+          ' > "$RUNNER_TEMP/discord-payload.json"
+          curl -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           ENVIRONMENT: ${{ inputs.environment }}
           SERVER_URL: ${{ inputs.server_url }}
@@ -334,15 +338,15 @@ jobs:
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && inputs.environment == 'production' }}
         run: |
           node -e '
-            const { REPO_LINK, SERVER_URL, COMMIT_LINK } = process.env;
+            const { REPO_LINK = "", SERVER_URL = "", COMMIT_LINK = "" } = process.env;
             console.log(JSON.stringify({
               username: "WillBooster Bot",
               avatar_url: "https://avatars.githubusercontent.com/u/98675783",
               content: `!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n${REPO_LINK} の本番環境 (${SERVER_URL}) を ${COMMIT_LINK} に更新しました。\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`,
             }));
-          ' > /tmp/discord-payload.json
-          curl -X POST -H "Content-Type: application/json" --data @/tmp/discord-payload.json "$DISCORD_WEBHOOK_URL"
-          rm -f /tmp/discord-payload.json
+          ' > "$RUNNER_TEMP/discord-payload.json"
+          curl -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           SERVER_URL: ${{ inputs.server_url }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -350,9 +354,15 @@ jobs:
       - if: ${{ always() }}
         name: Delete credential files
         run: |
-          rm -f -- "$GOOGLE_APPLICATION_CREDENTIALS" "${{ inputs.dot_env_path }}"
-          if [[ -n "${{ inputs.file_path_1 }}" ]]; then rm -f -- "${{ inputs.file_path_1 }}"; fi
-          if [[ -n "${{ inputs.file_path_2 }}" ]]; then rm -f -- "${{ inputs.file_path_2 }}"; fi
+          rm -f -- "$GOOGLE_APPLICATION_CREDENTIALS"
+          : # Delete the dotenv only when this run wrote it: some private repos commit .env.
+          if [[ "$HAS_DOT_ENV" == "true" ]]; then rm -f -- "$DOT_ENV_PATH"; fi
+          if [[ -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
+          if [[ -n "$FILE_PATH_2" ]]; then rm -f -- "$FILE_PATH_2"; fi
+        env:
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
+          FILE_PATH_1: ${{ inputs.file_path_1 }}
+          FILE_PATH_2: ${{ inputs.file_path_2 }}
       - if: ${{ always() }}
         name: Clean up pyc files and docker
         run: |
