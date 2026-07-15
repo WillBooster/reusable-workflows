@@ -205,6 +205,9 @@ jobs:
             if [[ "$YARN" == "1."* ]]; then
               echo "yarn-dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
               echo "skip-scripts-option=--ignore-scripts" >> $GITHUB_OUTPUT
+            elif [[ "$YARN" == "2."* ]]; then
+              : # Yarn 3 renamed Yarn 2's --skip-builds to --mode=skip-build.
+              echo "skip-scripts-option=--skip-builds" >> $GITHUB_OUTPUT
             else
               echo "skip-scripts-option=--mode=skip-build" >> $GITHUB_OUTPUT
             fi
@@ -284,17 +287,27 @@ jobs:
       # a root-only lookup misses; the root stays the fallback for single-package repos.
       - name: Prepare "ci-setup" hook runner
         run: |
+          : # Fail fast: without this, a typo'd path would silently fall back to the root hook and
+          : # then deploy the root package, since the lookup cannot tell it from "not declared here".
+          if [[ ! -d "$WORKING_DIRECTORY" ]]; then
+            echo "::error::working_directory \"$WORKING_DIRECTORY\" does not exist"
+            exit 1
+          fi
           echo "PKG_RUNNER=$PKG_RUNNER" >> $GITHUB_ENV
           echo "WORKING_DIRECTORY=$WORKING_DIRECTORY" >> $GITHUB_ENV
           cat << 'EOF' > "$RUNNER_TEMP/run-ci-setup.sh"
           set -euo pipefail
-          for dir in "$WORKING_DIRECTORY" .; do
-            if grep -q "\"$1\":" "$dir/package.json" 2> /dev/null; then
+          dirs=("$WORKING_DIRECTORY")
+          if [[ "$WORKING_DIRECTORY" != "." ]]; then dirs+=(.); fi
+          for dir in "${dirs[@]}"; do
+            : # Reading the parsed "scripts" object avoids both false negatives ("key" : "value" is
+            : # valid JSON) and false positives (the same key in a non-"scripts" object).
+            if node -e 'const f=`${process.argv[1]}/package.json`, fs=require("fs"); if (!fs.existsSync(f)) process.exit(1); const s=JSON.parse(fs.readFileSync(f, "utf8")).scripts; process.exit(s?.[process.argv[2]] ? 0 : 1)' "$dir" "$1"; then
               echo "Running \"$1\" in $dir"
               cd "$dir" && exec $PKG_RUNNER run "$1"
             fi
           done
-          echo "Skipped \"$1\": not declared in $WORKING_DIRECTORY/package.json nor ./package.json"
+          echo "Skipped \"$1\": not declared in ${dirs[*]/%//package.json}"
           EOF
         env:
           PKG_RUNNER: ${{ steps.env-info.outputs.runner }}
@@ -309,6 +322,9 @@ jobs:
           timeout_minutes: 60
           max_attempts: ${{ (env.HAS_FLY_API_TOKEN == 'true' || env.HAS_RAILWAY_API_TOKEN == 'true' || env.HAS_GCP_SA_KEY_JSON == 'true') && 20 || 1 }}
           command: |
+            : # The retry action runs this via `bash -c` without -e, so without this a failing
+            : # deploy/ci-setup or cd would fall through and deploy anyway, reporting success.
+            set -euo pipefail
             : # GCP_SA_KEY_JSON may be used in deploy/ci-setup
             bash "$RUNNER_TEMP/run-ci-setup.sh" deploy/ci-setup
             cd "$WORKING_DIRECTORY"
