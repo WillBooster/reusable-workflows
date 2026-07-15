@@ -62,6 +62,13 @@ on:
       version:
         required: false
         type: string
+      working_directory:
+        # Deploy target directory (e.g. packages/server for a monorepo Worker). The "common/ci-setup"
+        # and "deploy/ci-setup" hooks are looked up here first and in the repository root as a
+        # fallback, and the deploy command runs here. Dependencies are still installed in the root.
+        default: .
+        required: false
+        type: string
     secrets:
       DISCORD_WEBHOOK_URL:
         required: false
@@ -197,6 +204,9 @@ jobs:
             YARN=$(yarn -v); echo "yarn: $YARN"
             if [[ "$YARN" == "1."* ]]; then
               echo "yarn-dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
+              echo "skip-scripts-option=--ignore-scripts" >> $GITHUB_OUTPUT
+            else
+              echo "skip-scripts-option=--mode=skip-build" >> $GITHUB_OUTPUT
             fi
             echo "runner=yarn" >> $GITHUB_OUTPUT
           fi
@@ -251,7 +261,10 @@ jobs:
             # Because bun sometimes fails to install private repos (but, update is okay)
             bun install
           else
-            ${{ steps.env-info.outputs.runner }} install || true # To ignore postinstall errors
+            : # Retrying without lifecycle scripts keeps postinstall failures tolerated (consumers rely
+            : # on it) while resolution, authentication, network and lockfile errors still fail the job.
+            ${{ steps.env-info.outputs.runner }} install ||
+              ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }}
           fi
         env:
           GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
@@ -267,8 +280,28 @@ jobs:
         env:
           GCP_SA_KEY_JSON_FOR_FIREBASE: ${{ secrets.GCP_SA_KEY_JSON_FOR_FIREBASE }}
 
+      # A monorepo Worker declares its hooks in its own package.json next to its wrangler config, which
+      # a root-only lookup misses; the root stays the fallback for single-package repos.
+      - name: Prepare "ci-setup" hook runner
+        run: |
+          echo "PKG_RUNNER=$PKG_RUNNER" >> $GITHUB_ENV
+          echo "WORKING_DIRECTORY=$WORKING_DIRECTORY" >> $GITHUB_ENV
+          cat << 'EOF' > "$RUNNER_TEMP/run-ci-setup.sh"
+          set -euo pipefail
+          for dir in "$WORKING_DIRECTORY" .; do
+            if grep -q "\"$1\":" "$dir/package.json" 2> /dev/null; then
+              echo "Running \"$1\" in $dir"
+              cd "$dir" && exec $PKG_RUNNER run "$1"
+            fi
+          done
+          echo "Skipped \"$1\": not declared in $WORKING_DIRECTORY/package.json nor ./package.json"
+          EOF
+        env:
+          PKG_RUNNER: ${{ steps.env-info.outputs.runner }}
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+
       - name: Run "common/ci-setup" npm script if exists
-        run: if [[ "$(cat package.json)" == *'"common/ci-setup":'* ]]; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi
+        run: bash "$RUNNER_TEMP/run-ci-setup.sh" common/ci-setup
 
       - name: Deploy
         uses: nick-fields/retry@dd56f1ca8ca991e2385c18ab6dd36ea7f9fdb55f
@@ -277,7 +310,8 @@ jobs:
           max_attempts: ${{ (env.HAS_FLY_API_TOKEN == 'true' || env.HAS_RAILWAY_API_TOKEN == 'true' || env.HAS_GCP_SA_KEY_JSON == 'true') && 20 || 1 }}
           command: |
             : # GCP_SA_KEY_JSON may be used in deploy/ci-setup
-            if [[ "$(cat package.json)" == *'"deploy/ci-setup":'* ]]; then ${{ steps.env-info.outputs.runner }} run deploy/ci-setup; fi
+            bash "$RUNNER_TEMP/run-ci-setup.sh" deploy/ci-setup
+            cd "$WORKING_DIRECTORY"
             ${{ steps.env-info.outputs.runner }} run ${{ inputs.deploy_command || 'deploy' }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
