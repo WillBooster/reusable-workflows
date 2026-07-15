@@ -159,7 +159,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-v1-
       - name: Install dependencies
-        # Unlike deploy.yml/test.yml, install failures are NOT suppressed here: a maintenance
+        # Unlike the other workflows, even postinstall failures are NOT tolerated here: a maintenance
         # script run against a half-installed dependency graph could silently misbehave.
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
