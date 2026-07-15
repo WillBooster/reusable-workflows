@@ -269,10 +269,14 @@ jobs:
             # Because bun sometimes fails to install private repos (but, update is okay)
             bun install
           else
-            : # Retrying without lifecycle scripts keeps postinstall failures tolerated (consumers rely
-            : # on it) while resolution, authentication, network and lockfile errors still fail the job.
-            ${{ steps.env-info.outputs.runner }} install ||
+            : # Retry the same install first: this is the only network-bound step without a retry, and
+            : # letting a transient failure reach the fallback would skip every lifecycle script.
+            ${{ steps.env-info.outputs.runner }} install || ${{ steps.env-info.outputs.runner }} install || {
+              : # Only a reproducible failure reaches here, which keeps postinstall failures tolerated
+              : # (consumers rely on it) while resolution, auth and lockfile errors still fail the job.
+              echo "::warning::Install failed twice; retrying without lifecycle scripts"
               ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }}
+            }
           fi
         env:
           GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
