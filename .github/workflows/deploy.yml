@@ -307,10 +307,15 @@ jobs:
           if [[ "$WORKING_DIRECTORY" != "." ]]; then dirs+=(.); fi
           for dir in "${dirs[@]}"; do
             : # Reading the parsed "scripts" object avoids both false negatives ("key" : "value" is
-            : # valid JSON) and false positives (the same key in a non-"scripts" object).
-            if node -e 'const f=`${process.argv[1]}/package.json`, fs=require("fs"); if (!fs.existsSync(f)) process.exit(1); const s=JSON.parse(fs.readFileSync(f, "utf8")).scripts; process.exit(typeof s?.[process.argv[2]] === "string" ? 0 : 1)' "$dir" "$1"; then
+            : # valid JSON) and false positives (the same key in a non-"scripts" object). A BOM is
+            : # stripped because Yarn accepts it while JSON.parse does not, and exit 2 keeps an
+            : # unparseable manifest fatal rather than silently reading as "hook not declared".
+            node -e 'const f=`${process.argv[1]}/package.json`, fs=require("fs"); if (!fs.existsSync(f)) process.exit(1); let s; try { s = JSON.parse(fs.readFileSync(f, "utf8").replace(/^\uFEFF/, "")).scripts } catch (e) { console.error(`::error::Cannot parse ${f}: ${e.message}`); process.exit(2) } process.exit(typeof s?.[process.argv[2]] === "string" ? 0 : 1)' "$dir" "$1" && rc=0 || rc=$?
+            if [[ $rc -eq 0 ]]; then
               echo "Running \"$1\" in $dir"
               cd "$dir" && exec $PKG_RUNNER run "$1"
+            elif [[ $rc -ne 1 ]]; then
+              exit $rc
             fi
           done
           echo "Skipped \"$1\": not declared in ${dirs[*]/%//package.json}"
