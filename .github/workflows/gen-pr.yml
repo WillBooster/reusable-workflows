@@ -197,7 +197,7 @@ jobs:
           if git ls-files --error-unmatch -- "$DOT_ENV_PATH" > /dev/null 2>&1; then
             git update-index --skip-worktree -- "$DOT_ENV_PATH"
           else
-            printf '%s\n' "$DOT_ENV_PATH" >> .git/info/exclude
+            grep -qxF -- "$DOT_ENV_PATH" .git/info/exclude 2> /dev/null || printf '%s\n' "$DOT_ENV_PATH" >> .git/info/exclude
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
@@ -227,9 +227,18 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
-      # defaults to .env, which some private repos commit.
+      # defaults to .env, which some private repos commit. Also revert the hide step's `.git`
+      # mutations (skip-worktree bit and info/exclude line), which otherwise outlive the job on
+      # persistent self-hosted workspaces and keep checkout from restoring a committed dotenv file.
       - if: ${{ always() && env.HAS_DOT_ENV == 'true' }}
         name: Delete credential files
-        run: rm -f -- "$DOT_ENV_PATH"
+        run: |
+          rm -f -- "$DOT_ENV_PATH"
+          git update-index --no-skip-worktree -- "$DOT_ENV_PATH" 2> /dev/null || true
+          if [[ -f .git/info/exclude ]]; then
+            : # `grep -vx` exits 1 when every line matches, so tolerate it to keep `bash -e` green.
+            grep -vxF -- "$DOT_ENV_PATH" .git/info/exclude > .git/info/exclude.tmp || true
+            mv .git/info/exclude.tmp .git/info/exclude
+          fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
