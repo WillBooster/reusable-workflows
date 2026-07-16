@@ -71,6 +71,16 @@ jobs:
     outputs:
       json: ${{ steps.detect-node-version-matrix.outputs.json }}
     steps:
+      # A crashed run can leave skip-worktree bits (from the .npmrc/dotenv hide steps) that
+      # survive every reset/clean and make checkout fail once the consumer deletes the committed
+      # file, permanently wedging a persistent workspace — clear them before checkout.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Clear stale skip-worktree bits left by a crashed previous run
+        run: |
+          if [[ -d .git ]]; then
+            git ls-files -v 2> /dev/null | grep '^S ' | cut -c3- | tr '\n' '\0' | xargs -0 git update-index --no-skip-worktree -- 2> /dev/null || true
+            git checkout -- . 2> /dev/null || true
+          fi
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.0
       # We need Node.js only if no version is declared in mise-managed files and no .node-version exists.
