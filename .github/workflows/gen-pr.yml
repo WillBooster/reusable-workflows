@@ -87,6 +87,15 @@ jobs:
       # registry when installing dependencies; empty when the caller does not provide the secret.
       VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
     steps:
+      # A crashed run can leave skip-worktree bits (from the .npmrc/dotenv hide steps) that
+      # survive every reset/clean and make checkout fail once the consumer deletes the committed
+      # file, permanently wedging a persistent workspace — clear them before checkout.
+      - name: Clear stale skip-worktree bits left by a crashed previous run
+        run: |
+          if [[ -d .git ]]; then
+            git ls-files -v 2> /dev/null | grep '^S ' | cut -c3- | tr '\n' '\0' | xargs -0 git update-index --no-skip-worktree -- 2> /dev/null || true
+            git checkout -- . 2> /dev/null || true
+          fi
       - uses: actions/checkout@v7.0.0
         with:
           token: ${{ secrets.GH_TOKEN }}
@@ -191,7 +200,12 @@ jobs:
           if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then
             git update-index --skip-worktree -- .npmrc
           else
-            grep -qxF '/.npmrc' .git/info/exclude 2>/dev/null || echo '/.npmrc' >> .git/info/exclude
+            if ! grep -qxF '/.npmrc' .git/info/exclude 2>/dev/null; then
+              : # A persistent exclude file may end without a newline; a direct append would
+              : # merge into its last rule and leave the generated file unhidden.
+              if [[ -s .git/info/exclude && -n "$(tail -c1 .git/info/exclude)" ]]; then echo >> .git/info/exclude; fi
+              echo '/.npmrc' >> .git/info/exclude
+            fi
           fi
       - name: Install dependencies
         run: |
@@ -235,7 +249,12 @@ jobs:
           if git ls-files --error-unmatch -- "$DOT_ENV_PATH" > /dev/null 2>&1; then
             git update-index --skip-worktree -- "$DOT_ENV_PATH"
           else
-            grep -qxF -- "$DOT_ENV_PATH" .git/info/exclude 2> /dev/null || printf '%s\n' "$DOT_ENV_PATH" >> .git/info/exclude
+            if ! grep -qxF -- "$DOT_ENV_PATH" .git/info/exclude 2> /dev/null; then
+              : # A persistent exclude file may end without a newline; a direct append would
+              : # merge into its last rule and let gen-pr's `git add -A` stage the dotenv file.
+              if [[ -s .git/info/exclude && -n "$(tail -c1 .git/info/exclude)" ]]; then echo >> .git/info/exclude; fi
+              printf '%s\n' "$DOT_ENV_PATH" >> .git/info/exclude
+            fi
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}

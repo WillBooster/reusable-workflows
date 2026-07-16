@@ -125,7 +125,12 @@ jobs:
           if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then
             git update-index --skip-worktree -- .npmrc
           else
-            grep -qxF '/.npmrc' .git/info/exclude 2>/dev/null || echo '/.npmrc' >> .git/info/exclude
+            if ! grep -qxF '/.npmrc' .git/info/exclude 2>/dev/null; then
+              : # A persistent exclude file may end without a newline; a direct append would
+              : # merge into its last rule and leave the generated file unhidden.
+              if [[ -s .git/info/exclude && -n "$(tail -c1 .git/info/exclude)" ]]; then echo >> .git/info/exclude; fi
+              echo '/.npmrc' >> .git/info/exclude
+            fi
           fi
       - name: Install dependencies
         run: |
