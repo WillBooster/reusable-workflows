@@ -11,6 +11,9 @@ on:
       github_hosted_runner:
         required: false
         type: boolean
+      runs_on:
+        required: false
+        type: string
       dot_env_path:
         default: .env
         required: false
@@ -290,12 +293,18 @@ jobs:
       - if: ${{ always() && env.HAS_DOT_ENV == 'true' }}
         name: Delete credential files
         run: |
-          rm -f -- "$DOT_ENV_PATH"
-          git update-index --no-skip-worktree -- "$DOT_ENV_PATH" 2> /dev/null || true
-          if [[ -f .git/info/exclude ]]; then
-            : # `grep -vx` exits 1 when every line matches, so tolerate it to keep `bash -e` green.
-            grep -vxF -- "$DOT_ENV_PATH" .git/info/exclude > .git/info/exclude.tmp || true
-            mv .git/info/exclude.tmp .git/info/exclude
+          : # Restore a committed dotenv template instead of deleting it, which would leave the
+          : # persistent workspace dirty with a deleted tracked file.
+          if git ls-files --error-unmatch -- "$DOT_ENV_PATH" > /dev/null 2>&1; then
+            git update-index --no-skip-worktree -- "$DOT_ENV_PATH" 2> /dev/null || true
+            git checkout -- "$DOT_ENV_PATH" 2> /dev/null || true
+          else
+            rm -f -- "$DOT_ENV_PATH"
+            if [[ -f .git/info/exclude ]]; then
+              : # `grep -vx` exits 1 when every line matches, so tolerate it to keep `bash -e` green.
+              grep -vxF -- "$DOT_ENV_PATH" .git/info/exclude > .git/info/exclude.tmp || true
+              mv .git/info/exclude.tmp .git/info/exclude
+            fi
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
