@@ -34,6 +34,9 @@ on:
         required: false
       DOT_ENV:
         required: false
+      FNOX_AGE_KEY:
+        description: age secret key to decrypt fnox.toml secrets
+        required: false
       GH_TOKEN:
         required: true
       NPM_TOKEN:
@@ -51,13 +54,20 @@ jobs:
       FORCE_COLOR: 3
       NODE_OPTIONS: --max-old-space-size=4096
       # arguments
+      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       WB_ENV: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v7.0.0
+      # The secret is passed via env and written with printf so that quotes or backslashes in
+      # its value cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
-        run: echo '${{ secrets.DOT_ENV }}' > ${{ inputs.dot_env_path }}
+        run: printf '%s\n' "$DOT_ENV" > "$DOT_ENV_PATH"
+        env:
+          DOT_ENV: ${{ secrets.DOT_ENV }}
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
       - name: Check version files
         id: check-ver
         run: |
@@ -183,3 +193,11 @@ jobs:
         run: gh workflow run ${{ inputs.trigger_deploy_workflow }} --ref ${{ steps.post-release-tag.outputs.tag }}
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write + actions:write
+
+      # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
+      # defaults to .env, which some private repos commit.
+      - if: ${{ always() && env.HAS_DOT_ENV == 'true' }}
+        name: Delete credential files
+        run: rm -f -- "$DOT_ENV_PATH"
+        env:
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}

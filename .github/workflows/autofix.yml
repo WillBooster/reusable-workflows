@@ -7,6 +7,9 @@ on:
         required: false
         type: string
     secrets:
+      FNOX_AGE_KEY:
+        description: age secret key to decrypt fnox.toml secrets
+        required: false
       GH_PKG_READ_TOKEN:
         required: false
 
@@ -18,6 +21,9 @@ jobs:
   autofix:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (!inputs.target_organization || github.repository_owner == inputs.target_organization) }}
     runs-on: self-hosted
+    env:
+      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
     steps:
       # To trigger other workflows when running 'git push'
       - name: Checkout code with git

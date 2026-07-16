@@ -80,6 +80,9 @@ on:
         required: false
       FLY_API_TOKEN:
         required: false
+      FNOX_AGE_KEY:
+        description: age secret key to decrypt fnox.toml secrets
+        required: false
       GCP_SA_KEY_JSON:
         required: false
       GCP_SA_KEY_JSON_FOR_FIREBASE:
@@ -100,6 +103,8 @@ jobs:
       # constants
       PYTHON_VERSION: 3.13.9
       # arguments
+      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FLY_API_TOKEN: ${{ !!secrets.FLY_API_TOKEN }}

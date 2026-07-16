@@ -47,6 +47,9 @@ on:
     secrets:
       DOT_ENV:
         required: false
+      FNOX_AGE_KEY:
+        description: age secret key to decrypt fnox.toml secrets
+        required: false
       GH_TOKEN:
         required: true
       OPENAI_API_KEY:
@@ -74,13 +77,20 @@ jobs:
     runs-on: ${{ (inputs.runs_on && fromJSON(inputs.runs_on)) || ((!github.event.repository.private || inputs.github_hosted_runner) && 'ubuntu-latest') || fromJSON(format('["self-hosted", "{0}"]', inputs.ci_label)) }}
     env:
       # arguments
+      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
     steps:
       - uses: actions/checkout@v7.0.0
         with:
           token: ${{ secrets.GH_TOKEN }}
+      # The secret is passed via env and written with printf so that quotes or backslashes in
+      # its value cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
-        run: echo '${{ secrets.DOT_ENV }}' > ${{ inputs.dot_env_path }}
+        run: printf '%s\n' "$DOT_ENV" > "$DOT_ENV_PATH"
+        env:
+          DOT_ENV: ${{ secrets.DOT_ENV }}
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
 
       - name: Check version files
         id: check-ver
@@ -194,3 +204,11 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
+      # defaults to .env, which some private repos commit.
+      - if: ${{ always() && env.HAS_DOT_ENV == 'true' }}
+        name: Delete credential files
+        run: rm -f -- "$DOT_ENV_PATH"
+        env:
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
