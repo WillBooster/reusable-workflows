@@ -12,6 +12,8 @@ on:
         required: false
       GH_PKG_READ_TOKEN:
         required: false
+      NPM_TOKEN:
+        required: false
 
 concurrency:
   group: autofix-${{ github.head_ref }}
@@ -24,6 +26,9 @@ jobs:
     env:
       # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+      # Consumers' .npmrc references NPM_TOKEN to authenticate against the private Verdaccio
+      # registry when installing dependencies; empty when the caller does not provide the secret.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       # To trigger other workflows when running 'git push'
       - name: Checkout code with git

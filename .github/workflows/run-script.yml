@@ -74,6 +74,8 @@ on:
         required: false
       GH_PKG_READ_TOKEN:
         required: false
+      NPM_TOKEN:
+        required: false
 
 jobs:
   run-script:
@@ -87,6 +89,9 @@ jobs:
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
       HAS_FILE_CONTENT_2: ${{ !!secrets.FILE_CONTENT_2 }}
+      # Consumers' .npmrc references NPM_TOKEN to authenticate against the private Verdaccio
+      # registry when installing dependencies; empty when the caller does not provide the secret.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       WB_ENV: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v7.0.0

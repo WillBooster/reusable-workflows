@@ -70,6 +70,8 @@ on:
         required: false
       GH_PKG_READ_TOKEN:
         required: false
+      NPM_TOKEN:
+        required: false
 
 jobs:
   generate-pr:
@@ -80,6 +82,9 @@ jobs:
       # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
+      # Consumers' .npmrc references NPM_TOKEN to authenticate against the private Verdaccio
+      # registry when installing dependencies; empty when the caller does not provide the secret.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v7.0.0
         with:
@@ -180,6 +185,21 @@ jobs:
           elif grep -q '"build":' package.json; then
             ${{ steps.env-info.outputs.runner }} run build || true
           fi
+      # gen-pr@v4.1.15 commits the whole worktree (`git add -A`) and pushes it, so the DOT_ENV
+      # secret must leave the worktree before the action runs; every step that consumes the
+      # dotenv file (test/ci-setup, gen-code, build) has already run by this point. dot_env_path
+      # defaults to .env, which some private repos commit, so restore the tracked content
+      # instead of staging a secret or a deletion.
+      - if: ${{ env.HAS_DOT_ENV == 'true' }}
+        name: Remove dotenv secret from worktree
+        run: |
+          if git ls-files --error-unmatch -- "$DOT_ENV_PATH" > /dev/null 2>&1; then
+            git checkout -- "$DOT_ENV_PATH"
+          else
+            rm -f -- "$DOT_ENV_PATH"
+          fi
+        env:
+          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
       - name: Generate PR with LLMs
         uses: WillBooster/gen-pr@v4.1.15
         with:

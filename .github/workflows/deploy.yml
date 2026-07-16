@@ -91,6 +91,8 @@ on:
         required: false
       GH_PKG_READ_TOKEN:
         required: false
+      NPM_TOKEN:
+        required: false
       RAILWAY_API_TOKEN:
         required: false
 
@@ -113,6 +115,9 @@ jobs:
       HAS_FILE_CONTENT_2: ${{ !!secrets.FILE_CONTENT_2 }}
       HAS_GCP_SA_KEY_JSON_FOR_FIREBASE: ${{ !!secrets.GCP_SA_KEY_JSON_FOR_FIREBASE }}
       HAS_RAILWAY_API_TOKEN: ${{ !!secrets.RAILWAY_API_TOKEN }}
+      # Consumers' .npmrc references NPM_TOKEN to authenticate against the private Verdaccio
+      # registry when installing dependencies; empty when the caller does not provide the secret.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       WB_ENV: ${{ inputs.environment }}
     steps:
       - if: ${{ runner.environment == 'self-hosted' }}
