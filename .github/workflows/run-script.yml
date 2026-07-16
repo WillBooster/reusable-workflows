@@ -180,17 +180,25 @@ jobs:
       - if: ${{ env.VERDACCIO_TOKEN != '' }}
         name: Generate .npmrc for the private Verdaccio registry
         run: |
+          : # Recover state a crashed previous run may have left behind (the always() cleanup
+          : # cannot run when the runner dies): clear a stale skip-worktree bit and restore the
+          : # committed content before regenerating.
+          if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then
+            git update-index --no-skip-worktree -- .npmrc 2> /dev/null || true
+            git checkout -- .npmrc 2> /dev/null || true
+          fi
           NPMRC_TMP=$(mktemp "$RUNNER_TEMP/npmrc.XXXXXX")
-          touch .npmrc
-          grep -vE '^(@willbooster-private:registry|//verdaccio-production-e389\.up\.railway\.app/:_authToken)' .npmrc > "$NPMRC_TMP" || true
-          : # Some grep implementations do not add the final newline missing from the last line.
-          if [[ -s "$NPMRC_TMP" && -n "$(tail -c1 "$NPMRC_TMP")" ]]; then echo >> "$NPMRC_TMP"; fi
-          {
-            cat "$NPMRC_TMP"
-            echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/'
-            echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}'
-          } > .npmrc
-          rm "$NPMRC_TMP"
+          if [[ -e .npmrc ]]; then
+            grep -vE '^(@willbooster-private:registry|//verdaccio-production-e389\.up\.railway\.app/:_authToken)' .npmrc > "$NPMRC_TMP" || true
+            : # Some grep implementations do not add the final newline missing from the last line.
+            if [[ -s "$NPMRC_TMP" && -n "$(tail -c1 "$NPMRC_TMP")" ]]; then echo >> "$NPMRC_TMP"; fi
+          fi
+          echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/' >> "$NPMRC_TMP"
+          echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}' >> "$NPMRC_TMP"
+          : # Replace .npmrc with mv instead of writing into it, so a consumer-committed symlink
+          : # cannot redirect the managed lines into its target (e.g. a persistent home npmrc).
+          rm -f .npmrc
+          mv "$NPMRC_TMP" .npmrc
           : # Ignore rules never hide tracked files, so hide a committed .npmrc from the
           : # commit-and-push workflows with skip-worktree (same pattern as gen-pr's dotenv hide).
           if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then
