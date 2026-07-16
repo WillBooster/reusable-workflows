@@ -46,7 +46,8 @@ on:
         required: false
       GH_TOKEN:
         required: true
-      NPM_TOKEN:
+      VERDACCIO_TOKEN:
+        description: auth token for the private Verdaccio registry (used to generate ~/.npmrc)
         required: false
 jobs:
   pre:
@@ -110,9 +111,9 @@ jobs:
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_TEST_COMMAND: ${{ !!inputs.custom_test_command }}
-      # Consumers' .npmrc references NPM_TOKEN to authenticate against the private Verdaccio
+      # Referenced by the generated ~/.npmrc to authenticate against the private Verdaccio
       # registry when installing dependencies; empty when the caller does not provide the secret.
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       WB_ENV: ${{ inputs.environment || 'test' }}
     strategy:
       matrix:
@@ -243,6 +244,15 @@ jobs:
           WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
 
+      # ${VERDACCIO_TOKEN} is written literally; package managers expand it from the environment
+      # at install time, so no plaintext token lands on disk (self-hosted runners keep $HOME).
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.VERDACCIO_TOKEN != '' }}
+        name: Generate ~/.npmrc for the private Verdaccio registry
+        run: |
+          grep -qsF '@willbooster-private:registry' ~/.npmrc || {
+            echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/'
+            echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}'
+          } >> ~/.npmrc
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Install dependencies
         run: |
@@ -359,7 +369,8 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
+          NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         uses: actions/upload-artifact@v7.0.1
         with:

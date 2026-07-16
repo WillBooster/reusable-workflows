@@ -12,7 +12,8 @@ on:
         required: false
       GH_PKG_READ_TOKEN:
         required: false
-      NPM_TOKEN:
+      VERDACCIO_TOKEN:
+        description: auth token for the private Verdaccio registry (used to generate ~/.npmrc)
         required: false
 
 concurrency:
@@ -26,9 +27,9 @@ jobs:
     env:
       # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
-      # Consumers' .npmrc references NPM_TOKEN to authenticate against the private Verdaccio
+      # Referenced by the generated ~/.npmrc to authenticate against the private Verdaccio
       # registry when installing dependencies; empty when the caller does not provide the secret.
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
     steps:
       # To trigger other workflows when running 'git push'
       - name: Checkout code with git
@@ -89,6 +90,15 @@ jobs:
             echo "runner=yarn" >> $GITHUB_OUTPUT
           fi
 
+      # ${VERDACCIO_TOKEN} is written literally; package managers expand it from the environment
+      # at install time, so no plaintext token lands on disk (self-hosted runners keep $HOME).
+      - if: ${{ env.VERDACCIO_TOKEN != '' }}
+        name: Generate ~/.npmrc for the private Verdaccio registry
+        run: |
+          grep -qsF '@willbooster-private:registry' ~/.npmrc || {
+            echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/'
+            echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}'
+          } >> ~/.npmrc
       - name: Install dependencies
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
