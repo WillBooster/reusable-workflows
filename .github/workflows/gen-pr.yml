@@ -185,18 +185,19 @@ jobs:
           elif grep -q '"build":' package.json; then
             ${{ steps.env-info.outputs.runner }} run build || true
           fi
-      # gen-pr@v4.1.15 commits the whole worktree (`git add -A`) and pushes it, so the DOT_ENV
-      # secret must leave the worktree before the action runs; every step that consumes the
-      # dotenv file (test/ci-setup, gen-code, build) has already run by this point. dot_env_path
-      # defaults to .env, which some private repos commit, so restore the tracked content
-      # instead of staging a secret or a deletion.
+      # gen-pr@v4.1.15 commits the whole worktree (`git add -A`) and pushes it, but it also runs
+      # the coding tool and the caller's test-command before that commit, so the dotenv file must
+      # stay readable on disk while being invisible to `git add -A`. dot_env_path defaults to
+      # .env, which some private repos commit, so mark tracked files with skip-worktree and hide
+      # untracked ones via .git/info/exclude; the always() cleanup step below still deletes the
+      # file at job end.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
-        name: Remove dotenv secret from worktree
+        name: Hide dotenv secret from gen-pr's commit
         run: |
           if git ls-files --error-unmatch -- "$DOT_ENV_PATH" > /dev/null 2>&1; then
-            git checkout -- "$DOT_ENV_PATH"
+            git update-index --skip-worktree -- "$DOT_ENV_PATH"
           else
-            rm -f -- "$DOT_ENV_PATH"
+            printf '%s\n' "$DOT_ENV_PATH" >> .git/info/exclude
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
