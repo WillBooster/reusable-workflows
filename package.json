@@ -7,13 +7,13 @@
   "license": "UNLICENSED",
   "author": "WillBooster Inc.",
   "scripts": {
-    "cleanup": "yarn format",
+    "cleanup": "bun run format",
     "format": "sort-package-json",
     "postinstall": "husky || true",
-    "pre-push": "echo 'start pre-push'; sleep 60; yarn sync",
+    "pre-push": "echo 'start pre-push'; sleep 60; bun run sync",
     "prepare": "lefthook install || true",
     "sync": "one-way-git-sync -v -i node_modules -i renovate.json -d git@github.com:WillBoosterLab/reusable-workflows.git",
-    "sync-force": "yarn sync --force",
+    "sync-force": "bun run sync --force",
     "verify": "wb verify",
     "verify-full": "wb verify --full"
   },
@@ -22,6 +22,5 @@
     "lefthook": "2.1.10",
     "one-way-git-sync": "6.0.43",
     "sort-package-json": "4.0.0"
-  },
-  "packageManager": "yarn@4.17.1"
+  }
 }
