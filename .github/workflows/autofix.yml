@@ -13,7 +13,7 @@ on:
       GH_PKG_READ_TOKEN:
         required: false
       VERDACCIO_TOKEN:
-        description: auth token for the private Verdaccio registry (used to generate ~/.npmrc)
+        description: auth token for the private Verdaccio registry (used to generate .npmrc)
         required: false
 
 concurrency:
@@ -27,7 +27,7 @@ jobs:
     env:
       # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
-      # Referenced by the generated ~/.npmrc to authenticate against the private Verdaccio
+      # Referenced by the generated .npmrc to authenticate against the private Verdaccio
       # registry when installing dependencies; empty when the caller does not provide the secret.
       VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
     steps:
@@ -90,15 +90,25 @@ jobs:
             echo "runner=yarn" >> $GITHUB_OUTPUT
           fi
 
-      # ${VERDACCIO_TOKEN} is written literally; package managers expand it from the environment
-      # at install time, so no plaintext token lands on disk (self-hosted runners keep $HOME).
+      # ${VERDACCIO_TOKEN} is written literally; npm/bun/yarn1 expand it from the environment at
+      # install time, so no plaintext token lands on disk. The file goes into the workspace, NOT
+      # ~/.npmrc: a persistent ~/.npmrc would crash npm/yarn1 in any other job on the same
+      # self-hosted runner that leaves VERDACCIO_TOKEN undefined. The managed lines are rewritten
+      # authoritatively so stale entries never win over the current token, and the file is
+      # git-excluded so commit-and-push workflows cannot commit it. Yarn Berry ignores .npmrc;
+      # Berry consumers must reference ${VERDACCIO_TOKEN} from their committed .yarnrc.yml instead.
       - if: ${{ env.VERDACCIO_TOKEN != '' }}
-        name: Generate ~/.npmrc for the private Verdaccio registry
+        name: Generate .npmrc for the private Verdaccio registry
         run: |
-          grep -qsF '@willbooster-private:registry' ~/.npmrc || {
+          touch .npmrc
+          grep -vE '^(@willbooster-private:registry|//verdaccio-production-e389\.up\.railway\.app/:_authToken)' .npmrc > .npmrc.tmp || true
+          {
+            cat .npmrc.tmp
             echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/'
             echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}'
-          } >> ~/.npmrc
+          } > .npmrc
+          rm .npmrc.tmp
+          grep -qxF '.npmrc' .git/info/exclude 2>/dev/null || echo '.npmrc' >> .git/info/exclude
       - name: Install dependencies
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
