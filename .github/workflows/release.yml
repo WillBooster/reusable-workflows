@@ -64,6 +64,14 @@ jobs:
       WB_ENV: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v7.0.0
+      # fnox exits 0 and silently omits age-encrypted secrets when FNOX_AGE_KEY is missing or
+      # wrong, so fail fast instead of releasing without secrets.
+      - name: Ensure FNOX_AGE_KEY is provided when fnox.toml exists
+        run: |
+          if [[ -f fnox.toml && -z "$FNOX_AGE_KEY" ]]; then
+            echo "::error::fnox.toml exists but the FNOX_AGE_KEY secret was not provided"
+            exit 1
+          fi
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
