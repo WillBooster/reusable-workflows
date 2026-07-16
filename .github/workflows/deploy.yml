@@ -80,6 +80,9 @@ on:
         required: false
       FLY_API_TOKEN:
         required: false
+      FNOX_AGE_KEY:
+        description: age secret key to decrypt fnox.toml secrets
+        required: false
       GCP_SA_KEY_JSON:
         required: false
       GCP_SA_KEY_JSON_FOR_FIREBASE:
@@ -87,6 +90,8 @@ on:
       GH_TOKEN:
         required: false
       GH_PKG_READ_TOKEN:
+        required: false
+      NPM_TOKEN:
         required: false
       RAILWAY_API_TOKEN:
         required: false
@@ -100,6 +105,8 @@ jobs:
       # constants
       PYTHON_VERSION: 3.13.9
       # arguments
+      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FLY_API_TOKEN: ${{ !!secrets.FLY_API_TOKEN }}
@@ -108,6 +115,9 @@ jobs:
       HAS_FILE_CONTENT_2: ${{ !!secrets.FILE_CONTENT_2 }}
       HAS_GCP_SA_KEY_JSON_FOR_FIREBASE: ${{ !!secrets.GCP_SA_KEY_JSON_FOR_FIREBASE }}
       HAS_RAILWAY_API_TOKEN: ${{ !!secrets.RAILWAY_API_TOKEN }}
+      # Consumers' .npmrc references NPM_TOKEN to authenticate against the private Verdaccio
+      # registry when installing dependencies; empty when the caller does not provide the secret.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       WB_ENV: ${{ inputs.environment }}
     steps:
       - if: ${{ runner.environment == 'self-hosted' }}
@@ -119,6 +129,14 @@ jobs:
           # degrades to a bare commit sha, so a production deploy would no longer report its
           # release version (e.g. via a /version endpoint or the Discord notification).
           fetch-tags: true
+      # fnox exits 0 and silently omits age-encrypted secrets when FNOX_AGE_KEY is missing or
+      # wrong, so fail fast instead of deploying without secrets.
+      - name: Ensure FNOX_AGE_KEY is provided when fnox.toml exists
+        run: |
+          if [[ -f fnox.toml && -z "$FNOX_AGE_KEY" ]]; then
+            echo "::error::fnox.toml exists but the FNOX_AGE_KEY secret was not provided"
+            exit 1
+          fi
       # Secrets are passed via env and written with printf so that quotes or backslashes in
       # their values cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
