@@ -125,6 +125,10 @@ jobs:
       - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.branch }}
+          # WB_VERSION below comes from `git describe --always --tags`; without tags it silently
+          # degrades to a bare commit sha, so a production deploy would no longer report its
+          # release version (e.g. via a /version endpoint or the Discord notification).
+          fetch-tags: true
       # fnox exits 0 and silently omits age-encrypted secrets when FNOX_AGE_KEY is missing or
       # wrong, so fail fast instead of deploying without secrets.
       - name: Ensure FNOX_AGE_KEY is provided when fnox.toml exists
@@ -133,10 +137,6 @@ jobs:
             echo "::error::fnox.toml exists but the FNOX_AGE_KEY secret was not provided"
             exit 1
           fi
-          # WB_VERSION below comes from `git describe --always --tags`; without tags it silently
-          # degrades to a bare commit sha, so a production deploy would no longer report its
-          # release version (e.g. via a /version endpoint or the Discord notification).
-          fetch-tags: true
       # Secrets are passed via env and written with printf so that quotes or backslashes in
       # their values cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
