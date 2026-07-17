@@ -215,7 +215,12 @@ jobs:
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
       - name: Get current latest tag
         id: pre-release-tag
-        run: echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
+        # The checkout is shallow and tag-less, so fetch tags first; otherwise this step
+        # always reports an empty tag and the new-release check below succeeds on every
+        # run, triggering the deploy workflow even when semantic-release released nothing.
+        run: |
+          git fetch --tags --force
+          echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
       - name: Release
         run: |
           if [[ "$(cat package.json)" == *'"release":'* ]]; then
