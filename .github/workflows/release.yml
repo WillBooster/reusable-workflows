@@ -213,13 +213,25 @@ jobs:
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
-      - name: Get current latest tag
+      # This tag feeds only the new-release check that gates the deploy trigger, so skip it
+      # (and its fetch cost) for consumers without trigger_deploy_workflow.
+      - if: ${{ inputs.trigger_deploy_workflow }}
+        name: Get current latest tag
         id: pre-release-tag
-        # The checkout is shallow and tag-less, so fetch tags first; otherwise this step
-        # always reports an empty tag and the new-release check below succeeds on every
-        # run, triggering the deploy workflow even when semantic-release released nothing.
+        # The checkout is shallow and tag-less. Fetching tags alone is NOT enough: on a
+        # shallow clone `git describe` requires the tagged commit to be reachable from HEAD,
+        # so unshallow first; otherwise this step always reports an empty tag and the
+        # new-release check below succeeds on every run, triggering the deploy workflow even
+        # when semantic-release released nothing. (`--unshallow` fails on a complete
+        # repository, e.g. persistent self-hosted workspaces, hence the conditional.)
+        # Tolerate fetch failures: an empty tag at worst re-dispatches the deploy for an
+        # existing release, whereas a hard failure here would block the release entirely.
         run: |
-          git fetch --tags --force
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --unshallow --tags --force || true
+          else
+            git fetch --tags --force || true
+          fi
           echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
       - name: Release
         run: |
