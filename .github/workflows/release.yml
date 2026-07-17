@@ -280,6 +280,9 @@ jobs:
         # workspace package on the same commit. The qualified ref + --end-of-options keeps
         # tag names starting with '-' from being parsed as options.
         run: |
+          check_remote_tag() {
+            git ls-remote --exit-code --tags origin "refs/tags/$1" > /dev/null 2>&1
+          }
           git fetch --prune --prune-tags --tags --force || true
           git tag --list | sort > "$RUNNER_TEMP/tags-after-release.txt"
           NEW_TAGS=''
@@ -289,7 +292,21 @@ jobs:
             git merge-base --is-ancestor "$GITHUB_SHA" "$TAG_COMMIT" 2>/dev/null || continue
             # Only remotely published tags count: a release script may tag locally and then
             # fail to push, and `gh workflow run --ref` cannot resolve a local-only tag.
-            git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1 || continue
+            # ls-remote --exit-code returns 2 for a missing ref; any other failure is a
+            # transport error, which must not silently drop a published release (a re-run
+            # cannot re-detect it), so retry once and then fail loudly.
+            if ! check_remote_tag "$tag"; then
+              rc=$?
+              if [[ $rc -ne 2 ]]; then
+                sleep 5
+                check_remote_tag "$tag" && rc=0 || rc=$?
+              fi
+              if [[ $rc -eq 2 ]]; then continue; fi
+              if [[ $rc -ne 0 ]]; then
+                echo "::error::Could not verify refs/tags/$tag on origin (git ls-remote exited $rc); if it is published, dispatch the deploy manually with \`gh workflow run <workflow> --ref $tag\`."
+                exit 1
+              fi
+            fi
             NEW_TAGS="${NEW_TAGS:+$NEW_TAGS }$tag"
             NEW_COMMIT=${NEW_COMMIT:-$TAG_COMMIT}
           done < <(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-release.txt")
@@ -328,7 +345,9 @@ jobs:
       # recoverable by a re-run (the re-run's baseline already contains the tag).
       # allowed_mentions is emptied because the tag name lands in Discord Markdown, and the
       # commit link uses the SHA so tag names need no URL-encoding.
-      - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && steps.post-release-tag.outputs.created == 'true' }}
+      # !cancelled(): the announcement of a created release must still go out when a
+      # deploy dispatch failed (the implicit success() would skip it, unrecoverably).
+      - if: ${{ !cancelled() && env.HAS_DISCORD_WEBHOOK_URL == 'true' && steps.post-release-tag.outputs.created == 'true' }}
         run: |
           printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","allowed_mentions":{"parse":[]},"content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
           curl --retry 2 --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
