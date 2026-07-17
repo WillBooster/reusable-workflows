@@ -56,6 +56,9 @@ jobs:
     concurrency:
       group: release-${{ github.repository }}
       cancel-in-progress: false
+      # The default queue (`single`) cancels an already-pending run when another one queues,
+      # silently dropping a release; keep every queued release.
+      queue: max
     runs-on: ${{ (inputs.runs_on && fromJSON(inputs.runs_on)) || ((!github.event.repository.private || inputs.github_hosted_runner) && 'ubuntu-latest') || fromJSON('["self-hosted", "medium"]') }}
     env:
       FORCE_COLOR: 3
@@ -267,27 +270,38 @@ jobs:
         # which prefers annotated tags and can hide semantic-release's lightweight tag
         # behind an annotated one on the same commit) identifies the created tag. Tag names
         # may contain shell metacharacters, so they reach later scripts only via env.
+        # A new tag counts as this run's when its commit is GITHUB_SHA or a descendant of it
+        # (release scripts like `npm version` tag a commit they create on top of GITHUB_SHA);
+        # pre-existing tags point at ancestors and never match. Multiple tags are kept
+        # space-joined (refnames cannot contain spaces): multi-semantic-release tags every
+        # workspace package on the same commit. The qualified ref + --end-of-options keeps
+        # tag names starting with '-' from being parsed as options.
         run: |
           git fetch --tags --force || true
           git tag --list | sort > "$RUNNER_TEMP/tags-after-release.txt"
-          NEW_TAG=''
+          NEW_TAGS=''
           while IFS= read -r tag; do
-            if [[ "$(git rev-parse "$tag^{commit}" 2>/dev/null)" == "$GITHUB_SHA" ]]; then
-              NEW_TAG=$tag
-              break
+            TAG_COMMIT=$(git rev-parse --verify --end-of-options "refs/tags/$tag^{commit}" 2>/dev/null) || continue
+            if git merge-base --is-ancestor "$GITHUB_SHA" "$TAG_COMMIT" 2>/dev/null; then
+              NEW_TAGS="${NEW_TAGS:+$NEW_TAGS }$tag"
             fi
           done < <(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-release.txt")
-          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
-          if [[ -n "$NEW_TAG" ]]; then
+          echo "tags=$NEW_TAGS" >> "$GITHUB_OUTPUT"
+          echo "tag=${NEW_TAGS%% *}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$NEW_TAGS" ]]; then
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
       - if: ${{ inputs.trigger_deploy_workflow && steps.post-release-tag.outputs.created == 'true' }}
         name: Trigger deploy workflow
-        run: gh workflow run "$DEPLOY_WORKFLOW" --ref "$NEW_TAG"
+        # Word splitting on $NEW_TAGS is intended: refnames cannot contain spaces.
+        run: |
+          for tag in $NEW_TAGS; do
+            gh workflow run "$DEPLOY_WORKFLOW" --ref "$tag"
+          done
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write + actions:write
           DEPLOY_WORKFLOW: ${{ inputs.trigger_deploy_workflow }}
-          NEW_TAG: ${{ steps.post-release-tag.outputs.tag }}
+          NEW_TAGS: ${{ steps.post-release-tag.outputs.tags }}
       # Notify only when this run actually created a release; a build-only push used to
       # re-announce the previous tag. Same hardened shape as deploy.yml's notifiers: the
       # content is JSON-escaped by toJSON and inserted with printf so tag names cannot break
@@ -303,7 +317,7 @@ jobs:
           curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
-          CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commits/{3})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tag, github.sha)) }}
+          CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commit/{3})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tags, github.sha)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
