@@ -222,9 +222,21 @@ jobs:
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
+      # After waiting in the concurrency queue, a run can be older than the branch head a
+      # later run already released from; releasing from the stale checkout could publish a
+      # lower version after a higher one. GitHub does not guarantee queue ordering, so skip
+      # whenever the remote branch head has moved past this run's commit.
+      - name: Check whether this run is stale
+        id: stale-check
+        run: |
+          REMOTE_HEAD=$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)
+          if [[ -n "$REMOTE_HEAD" && "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
+            echo "::warning::Skipping the release: $GITHUB_REF_NAME has moved to $REMOTE_HEAD; a newer run will release it."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
       # This baseline feeds the new-release check that gates the deploy trigger and the
       # Discord notification, so skip it (and its fetch cost) when neither is configured.
-      - if: ${{ inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true' }}
+      - if: ${{ steps.stale-check.outputs.stale != 'true' && (inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true') }}
         name: Record the tags existing before the release
         id: pre-release-tag
         # The checkout is shallow and tag-less, so fetch the tags first (`--unshallow` on a
@@ -246,7 +258,8 @@ jobs:
           }
           fetch_tags || { sleep 10; fetch_tags; }
           git tag --list | sort > "$RUNNER_TEMP/tags-before-release.txt"
-      - name: Release
+      - if: ${{ steps.stale-check.outputs.stale != 'true' }}
+        name: Release
         run: |
           if [[ "$(cat package.json)" == *'"release":'* ]]; then
             ${{ steps.env-info.outputs.runner }} run release
@@ -262,7 +275,10 @@ jobs:
           HUSKY: 0
           LEFTHOOK: 0
 
-      - if: ${{ (inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true') && steps.pre-release-tag.outcome == 'success' }}
+      # !cancelled(): semantic-release can fail AFTER pushing its tag (e.g. a later publish
+      # plugin); the pushed release must still be detected and deployed — a re-run cannot
+      # re-detect it, and the job still fails via the Release step's own outcome.
+      - if: ${{ !cancelled() && (inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true') && steps.pre-release-tag.outcome == 'success' }}
         name: Check for new release tag
         id: post-release-tag
         # semantic-release creates the tag locally before pushing, so tolerate a failed
@@ -295,7 +311,9 @@ jobs:
             # ls-remote --exit-code returns 2 for a missing ref; any other failure is a
             # transport error, which must not silently drop a published release (a re-run
             # cannot re-detect it), so retry once and then fail loudly.
-            if ! check_remote_tag "$tag"; then
+            if check_remote_tag "$tag"; then
+              :
+            else
               rc=$?
               if [[ $rc -ne 2 ]]; then
                 sleep 5
@@ -316,7 +334,7 @@ jobs:
           if [[ -n "$NEW_TAGS" ]]; then
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
-      - if: ${{ inputs.trigger_deploy_workflow && steps.post-release-tag.outputs.created == 'true' }}
+      - if: ${{ !cancelled() && inputs.trigger_deploy_workflow && steps.post-release-tag.outputs.created == 'true' }}
         name: Trigger deploy workflow
         # Word splitting on $NEW_TAGS is intended: refnames cannot contain spaces. Each tag
         # is retried once and a failure does not abort the remaining tags. NOTE: a re-run of
