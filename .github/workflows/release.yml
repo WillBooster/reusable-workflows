@@ -228,17 +228,43 @@ jobs:
       # whenever the remote branch head has moved past this run's commit.
       - name: Check whether this run is stale
         id: stale-check
-        # Branch-triggered runs only: a tag/dispatch ref has no refs/heads entry. An EMPTY
+        # Branch-triggered runs only: a tag/dispatch ref has no refs/heads entry. A missing
         # remote head means the branch was deleted — a deletion push still triggers the
-        # workflow with GITHUB_SHA reset to the default branch, which must never be released.
+        # workflow with GITHUB_SHA reset to the default branch, which must never be
+        # released. ls-remote's status is read un-piped with --exit-code (2 = ref absent;
+        # anything else non-zero is a transport error, retried once then failed loudly —
+        # nothing has been released yet, so a re-run recovers cleanly). A moved head marks
+        # the run stale only when a successor run exists for the new head: renovate
+        # branch-automerges and [skip ci] pushes move the head WITHOUT creating a run, and
+        # skipping then would silently drop this commit's release.
         run: |
           if [[ "$GITHUB_REF" == refs/heads/* ]]; then
-            REMOTE_HEAD=$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)
-            if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
-              echo "::warning::Skipping the release: $GITHUB_REF_NAME is at '$REMOTE_HEAD', not $GITHUB_SHA (branch moved or deleted)."
+            ls_head() { git ls-remote --exit-code origin "refs/heads/$GITHUB_REF_NAME"; }
+            LS_OUT=$(ls_head) && rc=0 || rc=$?
+            if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+              sleep 5
+              LS_OUT=$(ls_head) && rc=0 || rc=$?
+            fi
+            if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+              echo "::error::Could not read refs/heads/$GITHUB_REF_NAME on origin (git ls-remote exited $rc); nothing has been released — re-run the job."
+              exit 1
+            fi
+            if [[ $rc -eq 2 ]]; then
+              echo "::warning::Skipping the release: $GITHUB_REF_NAME was deleted."
               echo "stale=true" >> "$GITHUB_OUTPUT"
+            else
+              REMOTE_HEAD=$(printf '%s' "$LS_OUT" | cut -f1)
+              if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
+                SUCCESSOR_RUNS=$(gh run list --commit "$REMOTE_HEAD" --workflow "$GITHUB_WORKFLOW" --json databaseId --jq length 2>/dev/null || echo 0)
+                if [[ "$SUCCESSOR_RUNS" != "0" ]]; then
+                  echo "::warning::Skipping the release: $GITHUB_REF_NAME moved to $REMOTE_HEAD and a newer run exists for it."
+                  echo "stale=true" >> "$GITHUB_OUTPUT"
+                fi
+              fi
             fi
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
       # This baseline feeds the new-release check that gates the deploy trigger and the
       # Discord notification, so skip it (and its fetch cost) when neither is configured.
       - if: ${{ steps.stale-check.outputs.stale != 'true' && (inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true') }}
