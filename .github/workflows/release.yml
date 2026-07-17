@@ -255,7 +255,13 @@ jobs:
             else
               REMOTE_HEAD=$(printf '%s' "$LS_OUT" | cut -f1)
               if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
-                SUCCESSOR_RUNS=$(gh run list --commit "$REMOTE_HEAD" --workflow "$GITHUB_WORKFLOW" --json databaseId --jq length 2>/dev/null || echo 0)
+                : # A gh failure must not silently disable this guard (nor silently skip the
+                : # release): retry once, then fail loudly — nothing has been released yet.
+                run_count() { gh run list --commit "$REMOTE_HEAD" --workflow "$GITHUB_WORKFLOW" --json databaseId --jq length; }
+                SUCCESSOR_RUNS=$(run_count) || { sleep 5; SUCCESSOR_RUNS=$(run_count); } || {
+                  echo "::error::Could not list workflow runs for $REMOTE_HEAD; nothing has been released — re-run the job."
+                  exit 1
+                }
                 if [[ "$SUCCESSOR_RUNS" != "0" ]]; then
                   echo "::warning::Skipping the release: $GITHUB_REF_NAME moved to $REMOTE_HEAD and a newer run exists for it."
                   echo "stale=true" >> "$GITHUB_OUTPUT"
@@ -364,7 +370,6 @@ jobs:
             NEW_COMMIT=${NEW_COMMIT:-$TAG_COMMIT}
           done < <(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-release.txt")
           echo "tags=$NEW_TAGS" >> "$GITHUB_OUTPUT"
-          echo "tag=${NEW_TAGS%% *}" >> "$GITHUB_OUTPUT"
           echo "commit=$NEW_COMMIT" >> "$GITHUB_OUTPUT"
           if [[ -n "$NEW_TAGS" ]]; then
             echo "created=true" >> "$GITHUB_OUTPUT"
