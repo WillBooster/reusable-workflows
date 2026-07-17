@@ -228,11 +228,16 @@ jobs:
       # whenever the remote branch head has moved past this run's commit.
       - name: Check whether this run is stale
         id: stale-check
+        # Branch-triggered runs only: a tag/dispatch ref has no refs/heads entry. An EMPTY
+        # remote head means the branch was deleted — a deletion push still triggers the
+        # workflow with GITHUB_SHA reset to the default branch, which must never be released.
         run: |
-          REMOTE_HEAD=$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)
-          if [[ -n "$REMOTE_HEAD" && "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
-            echo "::warning::Skipping the release: $GITHUB_REF_NAME has moved to $REMOTE_HEAD; a newer run will release it."
-            echo "stale=true" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/heads/* ]]; then
+            REMOTE_HEAD=$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)
+            if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
+              echo "::warning::Skipping the release: $GITHUB_REF_NAME is at '$REMOTE_HEAD', not $GITHUB_SHA (branch moved or deleted)."
+              echo "stale=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
       # This baseline feeds the new-release check that gates the deploy trigger and the
       # Discord notification, so skip it (and its fetch cost) when neither is configured.
@@ -303,6 +308,7 @@ jobs:
           git tag --list | sort > "$RUNNER_TEMP/tags-after-release.txt"
           NEW_TAGS=''
           NEW_COMMIT=''
+          UNRESOLVED_TAGS=''
           while IFS= read -r tag; do
             TAG_COMMIT=$(git rev-parse --verify --end-of-options "refs/tags/$tag^{commit}" 2>/dev/null) || continue
             git merge-base --is-ancestor "$GITHUB_SHA" "$TAG_COMMIT" 2>/dev/null || continue
@@ -321,8 +327,11 @@ jobs:
               fi
               if [[ $rc -eq 2 ]]; then continue; fi
               if [[ $rc -ne 0 ]]; then
+                # Keep scanning: one unverifiable tag must not swallow the side effects of
+                # tags that DID verify (a re-run cannot re-detect any of them).
                 echo "::error::Could not verify refs/tags/$tag on origin (git ls-remote exited $rc); if it is published, dispatch the deploy manually with \`gh workflow run <workflow> --ref $tag\`."
-                exit 1
+                UNRESOLVED_TAGS="${UNRESOLVED_TAGS:+$UNRESOLVED_TAGS }$tag"
+                continue
               fi
             fi
             NEW_TAGS="${NEW_TAGS:+$NEW_TAGS }$tag"
@@ -334,6 +343,11 @@ jobs:
           if [[ -n "$NEW_TAGS" ]]; then
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
+          if [[ -n "${UNRESOLVED_TAGS:-}" ]]; then
+            exit 1
+          fi
+      # outputs.created is still written when the step later fails on an unverifiable tag,
+      # and !cancelled() lets the verified tags' side effects proceed.
       - if: ${{ !cancelled() && inputs.trigger_deploy_workflow && steps.post-release-tag.outputs.created == 'true' }}
         name: Trigger deploy workflow
         # Word splitting on $NEW_TAGS is intended: refnames cannot contain spaces. Each tag
@@ -368,7 +382,9 @@ jobs:
       - if: ${{ !cancelled() && env.HAS_DISCORD_WEBHOOK_URL == 'true' && steps.post-release-tag.outputs.created == 'true' }}
         run: |
           printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","allowed_mentions":{"parse":[]},"content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
-          curl --retry 2 --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          : # wait=true makes Discord confirm the message was saved; without it an unsaved
+          : # message still returns success and the announcement is silently lost.
+          curl --retry 2 --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL?wait=true"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
           # The link targets the tagged commit, which release scripts like npm version may
