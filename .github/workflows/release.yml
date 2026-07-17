@@ -213,9 +213,9 @@ jobs:
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
-      # This tag feeds only the new-release check that gates the deploy trigger, so skip it
-      # (and its fetch cost) for consumers without trigger_deploy_workflow.
-      - if: ${{ inputs.trigger_deploy_workflow }}
+      # This tag feeds the new-release check that gates the deploy trigger and the Discord
+      # notification, so skip it (and its fetch cost) when neither consumer is configured.
+      - if: ${{ inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true' }}
         name: Get current latest tag
         id: pre-release-tag
         # The checkout is shallow and tag-less. Fetching tags alone is NOT enough: on a
@@ -224,8 +224,9 @@ jobs:
         # new-release check below succeeds on every run, triggering the deploy workflow even
         # when semantic-release released nothing. (`--unshallow` fails on a complete
         # repository, e.g. persistent self-hosted workspaces, hence the conditional.)
-        # Tolerate fetch failures: an empty tag at worst re-dispatches the deploy for an
-        # existing release, whereas a hard failure here would block the release entirely.
+        # Tolerate fetch failures rather than block the release: a stale (empty) baseline
+        # cannot cause a spurious deploy because the new-release check below also requires
+        # the tag to point at the commit this run released.
         run: |
           if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
             git fetch --unshallow --tags --force || true
@@ -249,31 +250,45 @@ jobs:
           HUSKY: 0
           LEFTHOOK: 0
 
-      - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' }}
+      - if: ${{ inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true' }}
+        name: Check for new release tag
+        id: post-release-tag
+        # semantic-release creates the tag locally before pushing, so tolerate a failed
+        # fetch here instead of failing the job after a successful release. `created`
+        # additionally requires the tag to point at the commit this run built: a stale
+        # baseline (failed pre-release fetch) or a tag published by an overlapping run can
+        # then never re-trigger a deploy for a release this run did not create. Tag names
+        # may contain shell metacharacters, so they are passed via env, never interpolated
+        # into the script.
+        run: |
+          git fetch --tags --force || true
+          NEW_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo '')
+          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          if [[ -n "$NEW_TAG" && "$NEW_TAG" != "$PRE_TAG" && "$(git rev-parse "$NEW_TAG^{commit}" 2>/dev/null)" == "$GITHUB_SHA" ]]; then
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          PRE_TAG: ${{ steps.pre-release-tag.outputs.tag }}
+      # Notify only when this run actually created a release; a build-only push used to
+      # re-announce the previous tag.
+      - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && steps.post-release-tag.outputs.created == 'true' }}
         run: |
           curl -X POST -H "Content-Type: application/json" \
                --data "{
                   \"username\": \"WillBooster Bot\",
                   \"avatar_url\": \"https://avatars.githubusercontent.com/u/98675783\",
-                  \"content\": \"[${{ github.event.repository.name }}](${{ github.event.repository.html_url }})の最新版 ([$(git describe --always --tags)](https://github.com/${{ github.repository }}/commits/$(git describe --always --tags))) をリリースしました。\"
+                  \"content\": \"[${{ github.event.repository.name }}](${{ github.event.repository.html_url }})の最新版 ([$NEW_TAG](https://github.com/${{ github.repository }}/commits/$NEW_TAG)) をリリースしました。\"
                }" \
                ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-      - if: ${{ inputs.trigger_deploy_workflow }}
-        name: Check for new release tag
-        id: post-release-tag
-        run: |
-          git fetch --tags --force
-          NEW_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo '')
-          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
-          if [[ -n "$NEW_TAG" && "$NEW_TAG" != "${{ steps.pre-release-tag.outputs.tag }}" ]]; then
-            echo "created=true" >> "$GITHUB_OUTPUT"
-          fi
+        env:
+          NEW_TAG: ${{ steps.post-release-tag.outputs.tag }}
       - if: ${{ inputs.trigger_deploy_workflow && steps.post-release-tag.outputs.created == 'true' }}
         name: Trigger deploy workflow
-        run: gh workflow run ${{ inputs.trigger_deploy_workflow }} --ref ${{ steps.post-release-tag.outputs.tag }}
+        run: gh workflow run "$DEPLOY_WORKFLOW" --ref "$NEW_TAG"
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write + actions:write
+          DEPLOY_WORKFLOW: ${{ inputs.trigger_deploy_workflow }}
+          NEW_TAG: ${{ steps.post-release-tag.outputs.tag }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
       # defaults to .env, which some private repos commit.
