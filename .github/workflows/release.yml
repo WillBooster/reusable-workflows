@@ -234,11 +234,14 @@ jobs:
         # a pre-existing tag to this run (e.g. a re-run of an already-released commit) and
         # re-dispatch its deploy.
         run: |
+          # --prune-tags drops runner-local tags absent from the remote (persistent
+          # self-hosted workspaces can retain a tag from a run whose push failed), so the
+          # baseline reflects the remote tag namespace.
           fetch_tags() {
             if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
-              git fetch --unshallow --tags --force
+              git fetch --unshallow --prune --prune-tags --tags --force
             else
-              git fetch --tags --force
+              git fetch --prune --prune-tags --tags --force
             fi
           }
           fetch_tags || { sleep 10; fetch_tags; }
@@ -277,27 +280,41 @@ jobs:
         # workspace package on the same commit. The qualified ref + --end-of-options keeps
         # tag names starting with '-' from being parsed as options.
         run: |
-          git fetch --tags --force || true
+          git fetch --prune --prune-tags --tags --force || true
           git tag --list | sort > "$RUNNER_TEMP/tags-after-release.txt"
           NEW_TAGS=''
+          NEW_COMMIT=''
           while IFS= read -r tag; do
             TAG_COMMIT=$(git rev-parse --verify --end-of-options "refs/tags/$tag^{commit}" 2>/dev/null) || continue
-            if git merge-base --is-ancestor "$GITHUB_SHA" "$TAG_COMMIT" 2>/dev/null; then
-              NEW_TAGS="${NEW_TAGS:+$NEW_TAGS }$tag"
-            fi
+            git merge-base --is-ancestor "$GITHUB_SHA" "$TAG_COMMIT" 2>/dev/null || continue
+            # Only remotely published tags count: a release script may tag locally and then
+            # fail to push, and `gh workflow run --ref` cannot resolve a local-only tag.
+            git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1 || continue
+            NEW_TAGS="${NEW_TAGS:+$NEW_TAGS }$tag"
+            NEW_COMMIT=${NEW_COMMIT:-$TAG_COMMIT}
           done < <(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-release.txt")
           echo "tags=$NEW_TAGS" >> "$GITHUB_OUTPUT"
           echo "tag=${NEW_TAGS%% *}" >> "$GITHUB_OUTPUT"
+          echo "commit=$NEW_COMMIT" >> "$GITHUB_OUTPUT"
           if [[ -n "$NEW_TAGS" ]]; then
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
       - if: ${{ inputs.trigger_deploy_workflow && steps.post-release-tag.outputs.created == 'true' }}
         name: Trigger deploy workflow
-        # Word splitting on $NEW_TAGS is intended: refnames cannot contain spaces.
+        # Word splitting on $NEW_TAGS is intended: refnames cannot contain spaces. Each tag
+        # is retried once and a failure does not abort the remaining tags. NOTE: a re-run of
+        # this job cannot re-detect the tags (its baseline already contains them), so if
+        # dispatches still fail, recover manually with
+        # `gh workflow run <deploy workflow> --ref <tag>`.
         run: |
+          STATUS=0
           for tag in $NEW_TAGS; do
-            gh workflow run "$DEPLOY_WORKFLOW" --ref "$tag"
+            gh workflow run "$DEPLOY_WORKFLOW" --ref "$tag" || gh workflow run "$DEPLOY_WORKFLOW" --ref "$tag" || {
+              echo "::error::Failed to dispatch $DEPLOY_WORKFLOW for $tag; run \`gh workflow run $DEPLOY_WORKFLOW --ref $tag\` manually."
+              STATUS=1
+            }
           done
+          exit $STATUS
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write + actions:write
           DEPLOY_WORKFLOW: ${{ inputs.trigger_deploy_workflow }}
@@ -314,10 +331,12 @@ jobs:
       - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && steps.post-release-tag.outputs.created == 'true' }}
         run: |
           printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","allowed_mentions":{"parse":[]},"content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
-          curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          curl --retry 2 --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
           rm -f "$RUNNER_TEMP/discord-payload.json"
         env:
-          CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commit/{3})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tags, github.sha)) }}
+          # The link targets the tagged commit, which release scripts like npm version may
+          # create on top of github.sha.
+          CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commit/{3})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tags, steps.post-release-tag.outputs.commit)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
