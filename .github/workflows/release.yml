@@ -50,10 +50,11 @@ on:
 jobs:
   release:
     if: ${{ (!inputs.target_organization || github.repository_owner == inputs.target_organization) && (!inputs.ignore_renovate || (github.event.head_commit.author.username != 'renovate-bot' && github.event.head_commit.author.username != 'renovate[bot]')) }}
-    # Serialize releases per repository/ref: with overlapping runs, a run could observe the
-    # tag another run just published at the same commit and re-dispatch its deploy.
+    # Serialize releases per repository (not per ref — two refs can point at the same
+    # commit): with overlapping runs, a run could observe the tag another run just
+    # published at its own commit and re-dispatch that release's deploy.
     concurrency:
-      group: release-${{ github.repository }}-${{ github.ref }}
+      group: release-${{ github.repository }}
       cancel-in-progress: false
     runs-on: ${{ (inputs.runs_on && fromJSON(inputs.runs_on)) || ((!github.event.repository.private || inputs.github_hosted_runner) && 'ubuntu-latest') || fromJSON('["self-hosted", "medium"]') }}
     env:
@@ -280,19 +281,6 @@ jobs:
           if [[ -n "$NEW_TAG" ]]; then
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
-      # Notify only when this run actually created a release; a build-only push used to
-      # re-announce the previous tag. Same hardened shape as deploy.yml's notifiers: the
-      # content is JSON-escaped by toJSON and inserted with printf so tag names cannot break
-      # the JSON or the shell, and --fail-with-body surfaces webhook rejections instead of
-      # silently losing the announcement.
-      - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && steps.post-release-tag.outputs.created == 'true' }}
-        run: |
-          printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
-          curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
-          rm -f "$RUNNER_TEMP/discord-payload.json"
-        env:
-          CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commits/{2})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tag)) }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       - if: ${{ inputs.trigger_deploy_workflow && steps.post-release-tag.outputs.created == 'true' }}
         name: Trigger deploy workflow
         run: gh workflow run "$DEPLOY_WORKFLOW" --ref "$NEW_TAG"
@@ -300,6 +288,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write + actions:write
           DEPLOY_WORKFLOW: ${{ inputs.trigger_deploy_workflow }}
           NEW_TAG: ${{ steps.post-release-tag.outputs.tag }}
+      # Notify only when this run actually created a release; a build-only push used to
+      # re-announce the previous tag. Same hardened shape as deploy.yml's notifiers: the
+      # content is JSON-escaped by toJSON and inserted with printf so tag names cannot break
+      # the JSON or the shell, and --fail-with-body surfaces webhook rejections instead of
+      # silently losing the announcement. This step must stay AFTER the deploy trigger:
+      # under bash -e a webhook rejection fails the job, and the deploy dispatch is not
+      # recoverable by a re-run (the re-run's baseline already contains the tag).
+      # allowed_mentions is emptied because the tag name lands in Discord Markdown, and the
+      # commit link uses the SHA so tag names need no URL-encoding.
+      - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && steps.post-release-tag.outputs.created == 'true' }}
+        run: |
+          printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","allowed_mentions":{"parse":[]},"content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
+          curl --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL"
+          rm -f "$RUNNER_TEMP/discord-payload.json"
+        env:
+          CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commits/{3})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tag, github.sha)) }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
       # defaults to .env, which some private repos commit.
