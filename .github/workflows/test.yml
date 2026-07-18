@@ -197,19 +197,21 @@ jobs:
           GNUPGHOME="$(mktemp -d "$RUNNER_TEMP/gnupg.XXXXXX")"
           chmod 700 "$GNUPGHOME"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
-      # fnox exits 0 and silently omits age-encrypted secrets when FNOX_AGE_KEY is missing or
-      # wrong, so a green run proves nothing about secret-dependent behavior. Unlike deploy's
-      # fail-fast guard, this only warns: fork pull requests legitimately run without secrets.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
-        name: Warn when FNOX_AGE_KEY is missing though fnox.toml exists
-        run: |
-          if [[ -f fnox.toml && -z "$FNOX_AGE_KEY" ]]; then
-            echo "::warning::fnox.toml exists but the FNOX_AGE_KEY secret was not provided; age-encrypted secrets are silently omitted in this run"
-          fi
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.check-ver.outputs.exist-any-version }}
         uses: jdx/mise-action@v4.2.0
         with:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
+      # fnox exits 0 and silently omits unresolvable secrets, so a green run proves nothing about
+      # secret-dependent behavior. Unlike deploy's fail-fast check, this only warns: fork pull
+      # requests legitimately run without secrets.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Warn when fnox.toml secrets cannot be resolved
+        run: |
+          if [[ -f fnox.toml ]] && command -v fnox > /dev/null; then
+            if ! FNOX_NON_INTERACTIVE=true fnox export --all --format json --no-daemon --if-missing error > /dev/null; then
+              echo "::warning::fnox.toml secrets cannot be resolved and are silently omitted in this run; check the FNOX_AGE_KEY secret"
+            fi
+          fi
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Show environment information
         id: env-info
