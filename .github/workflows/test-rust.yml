@@ -66,7 +66,9 @@ jobs:
           fi
 
           git remote set-url origin git@github.com:${{ github.repository }}.git || git remote add origin git@github.com:${{ github.repository }}.git
-          git fetch --depth 1 origin "$HEAD_REF"
+          # The refs/heads/ prefix keeps an option-like branch name (e.g. `--help`) from being
+          # parsed as a git option.
+          git fetch --depth 1 origin "refs/heads/$HEAD_REF"
 
           git reset --hard
           git clean -fdX

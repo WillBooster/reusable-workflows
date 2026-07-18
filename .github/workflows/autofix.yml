@@ -46,8 +46,10 @@ jobs:
           rm -rf .[^.]*
           git init --initial-branch=main
           git remote add origin git@github.com:${{ github.repository }}.git
-          git fetch --depth 1 origin "$HEAD_REF"
-          git checkout "$HEAD_REF"
+          # The refs/heads/ prefix and the -B form keep an option-like branch name (e.g. `--help`)
+          # from being parsed as a git option.
+          git fetch --depth 1 origin "refs/heads/$HEAD_REF"
+          git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
         env:
           HEAD_REF: ${{ github.head_ref }}
       - name: Check version files
@@ -188,7 +190,7 @@ jobs:
             git diff
             git add -A
             git commit -m "fix: apply changes of autofix workflow" --no-verify
-            git push origin "$HEAD_REF" --no-verify
+            git push origin "HEAD:refs/heads/$HEAD_REF" --no-verify
           fi
         env:
           HEAD_REF: ${{ github.head_ref }}

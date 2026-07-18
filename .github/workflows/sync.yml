@@ -32,8 +32,10 @@ jobs:
           rm -rf .[^.]*
           git init --initial-branch=main
           git remote add origin git@github.com:${{ github.repository }}.git
-          git fetch origin "$HEAD_REF"
-          git checkout "$HEAD_REF"
+          # The refs/heads/ prefix and the -B form keep an option-like branch name (e.g. `--help`)
+          # from being parsed as a git option.
+          git fetch origin "refs/heads/$HEAD_REF"
+          git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
         env:
           HEAD_REF: ${{ github.head_ref || github.ref_name }}
 
