@@ -204,18 +204,27 @@ jobs:
         env:
           WORKING_DIRECTORY: ${{ inputs.working_directory }}
         run: |
+          # A defined WB_ENV selects the matching fnox profile like the wb env loader does; an
+          # undefined profile name safely falls back to the base secrets (verified on fnox 1.30.0).
+          FNOX_ARGS=(--all --format json --no-daemon --if-missing error)
+          if [[ -n "$WB_ENV" ]]; then FNOX_ARGS+=(--profile "$WB_ENV"); fi
+          # `fnox config-files` lists the directory's whole ancestor config chain, so this also
+          # covers monorepo configs between the root and working_directory; it prints nothing
+          # for a directory with no fnox configuration.
           run_check() (
-            cd "$1" && FNOX_NON_INTERACTIVE=true fnox export --all --format json --no-daemon --if-missing error > /dev/null
+            cd "$1" || exit 1
+            [[ -n "$(FNOX_NON_INTERACTIVE=true fnox config-files 2> /dev/null)" ]] || exit 0
+            FNOX_NON_INTERACTIVE=true fnox export "${FNOX_ARGS[@]}" > /dev/null
           )
           if command -v fnox > /dev/null; then
-            if [[ -f fnox.toml ]] && ! run_check .; then
+            if ! run_check .; then
               echo "::error::fnox.toml secrets cannot be resolved; check the FNOX_AGE_KEY secret"
               exit 1
             fi
-            # The deploy script later runs from working_directory, where a child fnox.toml can add
-            # or override secrets (fnox resolves configs hierarchically), so validate that view too.
-            if [[ -n "$WORKING_DIRECTORY" && "$WORKING_DIRECTORY" != "." && -f "$WORKING_DIRECTORY/fnox.toml" ]] && ! run_check "$WORKING_DIRECTORY"; then
-              echo "::error::$WORKING_DIRECTORY/fnox.toml secrets cannot be resolved; check the FNOX_AGE_KEY secret"
+            # The deploy script later runs from working_directory, whose ancestor chain can add or
+            # override secrets, so validate that view too.
+            if [[ -n "$WORKING_DIRECTORY" && "$WORKING_DIRECTORY" != "." ]] && ! run_check "$WORKING_DIRECTORY"; then
+              echo "::error::fnox secrets for working_directory \"$WORKING_DIRECTORY\" cannot be resolved; check the FNOX_AGE_KEY secret"
               exit 1
             fi
           fi
