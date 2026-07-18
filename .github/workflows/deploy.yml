@@ -452,12 +452,14 @@ jobs:
         name: Check health of deployed server
         run: |
           url="${SERVER_URL%/}${{ inputs.health_check_path }}"
-          for i in $(seq 1 30); do
+          # A freshly attached custom domain can take minutes to resolve, and negative DNS caching
+          # makes each failed attempt return quickly - so poll for ~5 minutes before failing.
+          for i in $(seq 1 60); do
             if curl --fail --silent --show-error --max-time 10 "$url" > /dev/null; then
               echo "Health check passed on attempt $i: $url"
               exit 0
             fi
-            echo "Health check attempt $i/30 failed. Retrying in 5 seconds..."
+            echo "Health check attempt $i/60 failed. Retrying in 5 seconds..."
             sleep 5
           done
           echo "Health check failed: $url"
