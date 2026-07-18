@@ -377,7 +377,7 @@ jobs:
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
-          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
       # Typecheck must be executed after `gen-code`
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "typecheck" npm script if exists
