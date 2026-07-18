@@ -107,6 +107,14 @@ jobs:
       - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.branch }}
+      # fnox exits 0 and silently omits age-encrypted secrets when FNOX_AGE_KEY is missing or
+      # wrong, so fail fast instead of running the script without secrets (same guard as deploy).
+      - name: Ensure FNOX_AGE_KEY is provided when fnox.toml exists
+        run: |
+          if [[ -f fnox.toml && -z "$FNOX_AGE_KEY" ]]; then
+            echo "::error::fnox.toml exists but the FNOX_AGE_KEY secret was not provided"
+            exit 1
+          fi
       # Secrets are passed via env and written with printf so that quotes or backslashes in
       # their values cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
