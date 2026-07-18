@@ -114,9 +114,14 @@ jobs:
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_TEST_COMMAND: ${{ !!inputs.custom_test_command }}
-      # Referenced by the generated .npmrc to authenticate against the private Verdaccio
-      # registry when installing dependencies; empty when the caller does not provide the secret.
-      VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+      # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN secret itself is
+      # provided step-scoped only to the steps whose package-manager invocations expand it
+      # from the generated .npmrc.
+      HAS_VERDACCIO_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN }}
+      # Defined-but-empty default: yarn1 crashes with "Failed to replace env in config" when a
+      # .npmrc references an UNDEFINED env var (an empty one is fine), so steps that are not
+      # given the secret still need the variable to exist while the generated .npmrc is on disk.
+      VERDACCIO_TOKEN: ''
       WB_ENV: ${{ inputs.environment || 'test' }}
     strategy:
       matrix:
@@ -135,6 +140,8 @@ jobs:
       - if: ${{ needs.pre.outputs.should_skip != 'true' && !github.event.repository.private }}
         uses: actions/checkout@v7.0.0
       - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event.repository.private }}
+        # Branch names are attacker-controlled script-injection sources, so they reach the
+        # shell only via env and are always quoted.
         run: |
           if [[ ! -d .git ]]; then
             git init --initial-branch=main
@@ -143,15 +150,17 @@ jobs:
           fi
 
           git remote set-url origin git@github.com:${{ github.repository }}.git || git remote add origin git@github.com:${{ github.repository }}.git
-          git fetch --depth 1 origin ${{ github.head_ref || github.ref_name }}
+          git fetch --depth 1 origin "$HEAD_REF"
 
           git reset --hard
           git clean -fdX
-          if ! git checkout -B ${{ github.head_ref || github.ref_name }} origin/${{ github.head_ref || github.ref_name }}; then
+          if ! git checkout -B "$HEAD_REF" "origin/$HEAD_REF"; then
             git clean -fdx
-            git checkout -B ${{ github.head_ref || github.ref_name }} origin/${{ github.head_ref || github.ref_name }}
+            git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
           fi
-          git reset --hard origin/${{ github.head_ref || github.ref_name }}
+          git reset --hard "origin/$HEAD_REF"
+        env:
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
@@ -199,7 +208,7 @@ jobs:
         id: env-info
         # https://stackoverflow.com/a/677212
         run: |
-          echo "concurrency-group: ${{ github.workflow }}-${{ github.ref }}"
+          echo "concurrency-group: ${GITHUB_WORKFLOW}-${GITHUB_REF}"
           echo "WB_ENV: $WB_ENV"
           echo "node: $(node -v)"
           echo "npm: $(npm -v)"
@@ -264,7 +273,7 @@ jobs:
       # from git (a root-scoped exclude entry, or skip-worktree when the consumer tracks .npmrc)
       # so commit-and-push workflows cannot commit it. Yarn Berry ignores .npmrc; Berry consumers
       # must reference ${VERDACCIO_TOKEN} from their committed .yarnrc.yml instead.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.VERDACCIO_TOKEN != '' }}
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_VERDACCIO_TOKEN == 'true' }}
         name: Generate .npmrc for the private Verdaccio registry
         run: |
           : # Recover state a crashed previous run may have left behind (the always() cleanup
@@ -315,6 +324,7 @@ jobs:
           fi
         env:
           GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
+          VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "common/ci-setup" npm script if exists
         run: if grep -q '"common/ci-setup":' package.json; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi
@@ -359,7 +369,7 @@ jobs:
             if [[ "${{ github.event.repository.private }}" == "true" ]]; then
               git add -A -- . "${excludes[@]}"
               git commit -m "fix: apply changes of autofix workflow" --no-verify
-              git push origin ${{ github.head_ref }} --no-verify
+              git push origin "$HEAD_REF" --no-verify
             else
               echo "Found changes during gen-code, cleanup, lint-fix and/or build"
               exit 1
@@ -367,6 +377,7 @@ jobs:
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
+          HEAD_REF: ${{ github.head_ref }}
       # Typecheck must be executed after `gen-code`
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "typecheck" npm script if exists
@@ -416,6 +427,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+          # The dry run's npm invocations expand ${VERDACCIO_TOKEN} from the generated .npmrc.
+          VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -432,7 +445,7 @@ jobs:
       # Revert the generate step: remove the file when this run created it, or restore the
       # committed content and clear the skip-worktree bit when the consumer tracks .npmrc; the
       # `.git` mutations otherwise outlive the job on persistent self-hosted workspaces.
-      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && env.VERDACCIO_TOKEN != '' }}
+      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && env.HAS_VERDACCIO_TOKEN == 'true' }}
         name: Clean up the generated .npmrc
         run: |
           if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then

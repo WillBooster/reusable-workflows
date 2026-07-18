@@ -20,5 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
       - id: echo
+        # The text may carry attacker-controlled content (e.g. a PR title), so it reaches the
+        # shell only via env and is always quoted.
         run: |
-          echo "text=${{ inputs.text }}" >> $GITHUB_OUTPUT
+          echo "text=$TEXT" >> "$GITHUB_OUTPUT"
+        env:
+          TEXT: ${{ inputs.text }}
