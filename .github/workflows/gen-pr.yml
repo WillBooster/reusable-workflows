@@ -210,10 +210,22 @@ jobs:
               echo '/.npmrc' >> .git/info/exclude
             fi
           fi
+      # With a Verdaccio token, resolve and download with lifecycle scripts disabled so
+      # repository- or dependency-defined preinstall/postinstall can never read the step-scoped
+      # VERDACCIO_TOKEN (#449); the tokenless step below replays the skipped scripts.
       - name: Install dependencies
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
-            bun install
+            if [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+              bun install --ignore-scripts
+            else
+              bun install
+            fi
+          elif [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+            : # No lifecycle scripts run here, so a single retry only covers transient network
+            : # failures; a reproducible failure is a resolution, auth or lockfile error.
+            ${{ steps.env-info.outputs.runner }} install --no-immutable ${{ steps.env-info.outputs.skip-scripts-option }} || \
+              ${{ steps.env-info.outputs.runner }} install --no-immutable ${{ steps.env-info.outputs.skip-scripts-option }}
           else
             : # Retry the same install first: this is the only network-bound step without a retry, and
             : # letting a transient failure reach the fallback would skip every lifecycle script.
@@ -227,6 +239,33 @@ jobs:
         env:
           GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+      # Replay the lifecycle scripts the credentialed install skipped, in an environment without
+      # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
+      # .npmrc/.yarnrc.yml expanding to '' instead of erroring). Every package is already in the
+      # package manager's cache from the step above, so the private registry is not contacted.
+      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' }}
+        name: Run dependency lifecycle scripts without registry credentials
+        run: |
+          if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
+            : # A repeated `bun install` is a no-op that does not replay skipped scripts, so
+            : # force a full cache-hit re-link.
+            rm -rf node_modules
+            bun install
+          else
+            if [[ "${{ steps.env-info.outputs.skip-scripts-option }}" == "--ignore-scripts" ]]; then
+              : # yarn1 reports "Already up-to-date" and skips scripts unless node_modules is
+              : # removed; Yarn Berry instead tracks unbuilt packages and rebuilds them itself.
+              rm -rf node_modules
+            fi
+            ${{ steps.env-info.outputs.runner }} install --no-immutable || {
+              : # Keep postinstall failures tolerated (consumers rely on it) while still leaving
+              : # a complete node_modules behind.
+              echo "::warning::Lifecycle scripts failed; completing the install without them"
+              ${{ steps.env-info.outputs.runner }} install --no-immutable ${{ steps.env-info.outputs.skip-scripts-option }}
+            }
+          fi
+        env:
+          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
       - name: Remove .next directory
         run: rm -Rf .next
       - name: Run "test/ci-setup" npm script if exists
