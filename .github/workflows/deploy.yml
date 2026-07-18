@@ -175,7 +175,7 @@ jobs:
         env:
           WORKING_DIRECTORY: ${{ inputs.working_directory }}
       - if: ${{ !steps.check-ver.outputs.exist-nodejs-version }}
-        uses: actions/setup-node@v6.5.0
+        uses: actions/setup-node@v7.0.0
         with:
           check-latest: true
           node-version: lts/*
