@@ -30,7 +30,9 @@ runs:
         # for a directory with no fnox configuration.
         run_check() (
           cd "$1" || exit 1
-          [[ -n "$(FNOX_NON_INTERACTIVE=true fnox config-files 2> /dev/null)" ]] || exit 0
+          # A failing `fnox config-files` (e.g. a broken fnox.toml) must fail the check, not skip it.
+          config_files="$(FNOX_NON_INTERACTIVE=true fnox config-files)" || exit 1
+          [[ -n "$config_files" ]] || exit 0
           FNOX_NON_INTERACTIVE=true fnox export "${FNOX_ARGS[@]}" > /dev/null
         )
         report() {
