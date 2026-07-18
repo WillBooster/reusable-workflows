@@ -409,6 +409,9 @@ jobs:
             done
             ${{ steps.env-info.outputs.runner }} run lint-staged --allow-empty
           fi
+      # Note: `env.GITHUB_TOKEN` here reads this step's own step-level env (the runner merges a
+      # step's `env:` into the `env` context before evaluating its `if:`); consumer runs show the
+      # step executing, so this gate is live, not dead.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.GITHUB_TOKEN != '' && github.event_name == 'pull_request' }}
         name: Test release script
         run: |

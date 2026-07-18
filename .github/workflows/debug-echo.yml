@@ -33,7 +33,7 @@ jobs:
           delimiter="$(openssl rand -hex 16)"
           {
             echo "text<<$delimiter"
-            echo "$TEXT"
+            printf '%s\n' "$TEXT"
             echo "$delimiter"
           } >> "$GITHUB_OUTPUT"
         env:
