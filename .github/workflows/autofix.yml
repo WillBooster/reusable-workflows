@@ -41,6 +41,14 @@ jobs:
           git remote add origin git@github.com:${{ github.repository }}.git
           git fetch --depth 1 origin ${{ github.head_ref }}
           git checkout ${{ github.head_ref }}
+      # fnox exits 0 and silently omits age-encrypted secrets when FNOX_AGE_KEY is missing or
+      # wrong. Autofix only runs cleanup/build (never app code needing secrets), so a missing key
+      # is expected for many callers — warn instead of failing, mirroring test.yml.
+      - name: Warn when FNOX_AGE_KEY is missing though fnox.toml exists
+        run: |
+          if [[ -f fnox.toml && -z "$FNOX_AGE_KEY" ]]; then
+            echo "::warning::fnox.toml exists but the FNOX_AGE_KEY secret was not provided; age-encrypted secrets are silently omitted in this run"
+          fi
       - name: Check version files
         id: check-ver
         run: |
