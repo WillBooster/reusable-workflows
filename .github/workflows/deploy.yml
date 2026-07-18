@@ -451,19 +451,27 @@ jobs:
       - if: ${{ inputs.health_check_path }}
         name: Check health of deployed server
         run: |
-          url="${SERVER_URL%/}${{ inputs.health_check_path }}"
-          for i in $(seq 1 30); do
+          [[ -n "${SERVER_URL:-}" ]] || { echo "::error::health_check_path requires server_url"; exit 1; }
+          url="${SERVER_URL%/}/${HEALTH_CHECK_PATH#/}"
+          # Poll with a wall-clock deadline: a freshly attached custom domain can take minutes to
+          # resolve (each attempt fails fast under negative DNS caching), while a hanging endpoint
+          # burns up to 10 s per attempt - the deadline bounds both cases at ~5 minutes.
+          deadline=$((SECONDS + 300))
+          i=0
+          while (( SECONDS < deadline )); do
+            i=$((i + 1))
             if curl --fail --silent --show-error --max-time 10 "$url" > /dev/null; then
               echo "Health check passed on attempt $i: $url"
               exit 0
             fi
-            echo "Health check attempt $i/30 failed. Retrying in 5 seconds..."
+            echo "Health check attempt $i failed. Retrying in 5 seconds..."
             sleep 5
           done
-          echo "Health check failed: $url"
+          echo "Health check failed after $i attempts: $url"
           exit 1
         env:
           SERVER_URL: ${{ inputs.server_url }}
+          HEALTH_CHECK_PATH: ${{ inputs.health_check_path }}
 
       # always(): runs even when an earlier step failed, so the failure notification below
       # always has REPO_LINK/COMMIT_LINK/WORKFLOW_URL available.
