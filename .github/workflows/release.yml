@@ -68,9 +68,14 @@ jobs:
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
-      # Referenced by the generated .npmrc to authenticate against the private Verdaccio
-      # registry when installing dependencies; empty when the caller does not provide the secret.
-      VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+      # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN secret itself is
+      # provided step-scoped only to the steps whose package-manager invocations expand it
+      # from the generated .npmrc.
+      HAS_VERDACCIO_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN }}
+      # Defined-but-empty default: yarn1 crashes with "Failed to replace env in config" when a
+      # .npmrc references an UNDEFINED env var (an empty one is fine), so steps that are not
+      # given the secret still need the variable to exist while the generated .npmrc is on disk.
+      VERDACCIO_TOKEN: ''
       WB_ENV: ${{ inputs.environment }}
     steps:
       - name: Clear stale skip-worktree bits left by a crashed previous run
@@ -155,7 +160,7 @@ jobs:
       # from git (a root-scoped exclude entry, or skip-worktree when the consumer tracks .npmrc)
       # so commit-and-push workflows cannot commit it. Yarn Berry ignores .npmrc; Berry consumers
       # must reference ${VERDACCIO_TOKEN} from their committed .yarnrc.yml instead.
-      - if: ${{ env.VERDACCIO_TOKEN != '' }}
+      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' }}
         name: Generate .npmrc for the private Verdaccio registry
         run: |
           : # Recover state a crashed previous run may have left behind (the always() cleanup
@@ -206,6 +211,7 @@ jobs:
           fi
         env:
           GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
+          VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
@@ -295,6 +301,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+          # The release script's npm invocations expand ${VERDACCIO_TOKEN} from the generated .npmrc.
+          VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
           HUSKY: 0
           LEFTHOOK: 0
@@ -420,7 +428,7 @@ jobs:
       # Revert the generate step: remove the file when this run created it, or restore the
       # committed content and clear the skip-worktree bit when the consumer tracks .npmrc; the
       # `.git` mutations otherwise outlive the job on persistent self-hosted workspaces.
-      - if: ${{ always() && env.VERDACCIO_TOKEN != '' }}
+      - if: ${{ always() && env.HAS_VERDACCIO_TOKEN == 'true' }}
         name: Clean up the generated .npmrc
         run: |
           if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then
