@@ -126,6 +126,14 @@ jobs:
       VERDACCIO_TOKEN: ''
       WB_ENV: ${{ inputs.environment }}
     steps:
+      # `required: true` does not guarantee a non-empty value: a caller passing e.g.
+      # `environment: ${{ vars.WB_ENV }}` with the variable unset supplies an empty string.
+      - name: Ensure the environment input is not empty
+        run: |
+          if [[ -z "$WB_ENV" ]]; then
+            echo '::error::The environment input is empty; pass a concrete environment (e.g. production).'
+            exit 1
+          fi
       - if: ${{ runner.environment == 'self-hosted' }}
         run: if [[ ! $(docker ps) ]]; then sudo reboot; fi
       - name: Clear stale skip-worktree bits left by a crashed previous run

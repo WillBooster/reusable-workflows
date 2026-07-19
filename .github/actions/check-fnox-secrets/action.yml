@@ -39,23 +39,50 @@ runs:
         # declared profile, 5 = fnox configuration unreadable, 6 = secret resolution failure.
         run_check() (
           cd "$1" || exit 5
+          check_root="$(pwd -P)"
           config_files="$(FNOX_NON_INTERACTIVE=true fnox config-files)" || exit 5
           # `fnox config-files` also lists GLOBAL configs, which exist on persistent self-hosted
           # runners even for fnox-less repositories; only a repository-scoped config may subject
           # the repository to these checks.
-          grep -qF "$REPO_ROOT/" <<< "$config_files" || exit 0
+          repo_base_configs="$(grep -F "$REPO_ROOT/" <<< "$config_files" || true)"
+          if [[ -z "$repo_base_configs" ]]; then
+            # Profile-specific configs (fnox.<profile>.toml) are NOT listed by a bare
+            # `fnox config-files` (verified with fnox 1.30.0: a repository containing only
+            # fnox.production.toml prints nothing), so walk the directory chain up to the
+            # repository root for them before deciding there is nothing to check.
+            has_profile_config=0
+            dir="$check_root"
+            while :; do
+              if compgen -G "$dir/fnox.*.toml" > /dev/null || compgen -G "$dir/.fnox.*.toml" > /dev/null; then
+                has_profile_config=1
+                break
+              fi
+              [[ "$dir" == "$REPO_ROOT" || "$dir" == '/' ]] && break
+              dir="$(dirname "$dir")"
+            done
+            [[ "$has_profile_config" -eq 1 ]] || exit 0
+          fi
           [[ -n "$WB_ENV" ]] || exit 3
           # fnox silently falls back to the base secrets when the requested profile is not
           # declared (verified with fnox 1.30.0: `fnox export --profile production` exits 0 with
           # base values), so a typoed or missing profile would validate development secrets for a
           # production job. The base carries the development values per the org standard, so
           # "development" itself needs no declared profile. A declared profile is an inline
-          # [profiles.<name>] row from `fnox profiles` (the header and the synthesized `default`
-          # row are NOT declarations) or a repository-scoped profile-specific file
-          # (fnox.<name>.toml), which `fnox profiles` does not list.
+          # [profiles.<name>] table of a REPOSITORY base config, or a repository-scoped
+          # profile-specific file (fnox.<name>.toml), which `fnox profiles` does not list.
           if [[ "$WB_ENV" != 'development' ]]; then
-            declared_profiles="$(FNOX_CONFIG_DIR="$EMPTY_FNOX_CONFIG_DIR" FNOX_NON_INTERACTIVE=true fnox profiles)" || exit 5
+            declared_profiles=''
+            # Query inline profiles per repository config via `--config <file>`: a bare
+            # `fnox profiles` also aggregates ancestor and global configs, either of which could
+            # vouch for a profile the repository never declared (verified with fnox 1.30.0).
+            while IFS= read -r base_config; do
+              [[ -n "$base_config" ]] || continue
+              file_profiles="$(FNOX_CONFIG_DIR="$EMPTY_FNOX_CONFIG_DIR" FNOX_NON_INTERACTIVE=true fnox profiles --config "$base_config")" || exit 5
+              declared_profiles+="$file_profiles"$'\n'
+            done <<< "$repo_base_configs"
             profile_config_files="$(FNOX_CONFIG_DIR="$EMPTY_FNOX_CONFIG_DIR" FNOX_NON_INTERACTIVE=true fnox config-files --profile "$WB_ENV")" || exit 5
+            # Profile rows are indented; the header and fnox's synthesized `default` row are not
+            # declarations.
             if ! awk '/^  /{ print $1 }' <<< "$declared_profiles" | grep -vxF default | grep -qxF -- "$WB_ENV" &&
               ! { grep -F "$REPO_ROOT/" <<< "$profile_config_files" | grep -qF -- "/fnox.$WB_ENV.toml"; }; then
               exit 4
