@@ -82,14 +82,26 @@ runs:
               declared_profiles+="$file_profiles"$'\n'
             done <<< "$repo_base_configs"
             profile_config_files="$(FNOX_CONFIG_DIR="$EMPTY_FNOX_CONFIG_DIR" FNOX_NON_INTERACTIVE=true fnox config-files --profile "$WB_ENV")" || exit 5
-            # Profile rows are indented; the header and fnox's synthesized `default` row are not
-            # declarations.
-            # Both supported profile-file basenames count (fnox.<name>.toml and the hidden
-            # .fnox.<name>.toml), matching the chain walk above.
-            if ! awk '/^  /{ print $1 }' <<< "$declared_profiles" | grep -vxF default | grep -qxF -- "$WB_ENV" &&
-              ! { grep -F "$REPO_ROOT/" <<< "$profile_config_files" | grep -qE -- "/\.?fnox\.$WB_ENV\.toml$"; }; then
-              exit 4
+            # Profile rows are indented as `  <name> (N secrets)`; strip exactly that decoration
+            # (a name may contain whitespace, so `awk '{ print $1 }'` would truncate it) — the
+            # header and fnox's synthesized `default` row are not declarations. Both supported
+            # profile-file basenames count (fnox.<name>.toml and the hidden .fnox.<name>.toml),
+            # compared with literal shell equality so regex metacharacters in a name cannot
+            # break the match.
+            profile_declared=0
+            if sed -E 's/^  //; s/ \([0-9]+ secrets\)$//' <<< "$declared_profiles" | grep -vxF default | grep -qxF -- "$WB_ENV"; then
+              profile_declared=1
+            else
+              while IFS= read -r profile_config_file; do
+                case "$profile_config_file" in "$REPO_ROOT"/*) ;; *) continue ;; esac
+                base_name="${profile_config_file##*/}"
+                if [[ "$base_name" == "fnox.$WB_ENV.toml" || "$base_name" == ".fnox.$WB_ENV.toml" ]]; then
+                  profile_declared=1
+                  break
+                fi
+              done <<< "$profile_config_files"
             fi
+            [[ "$profile_declared" -eq 1 ]] || exit 4
           fi
           if ! export_error="$(FNOX_NON_INTERACTIVE=true fnox export "${FNOX_ARGS[@]}" 2>&1 > /dev/null)"; then
             printf '%s\n' "$export_error" >&2
