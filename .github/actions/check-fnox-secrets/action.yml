@@ -47,6 +47,11 @@ runs:
         # fnox shim exists even for repos that do not pin fnox, and errors with "No version is
         # set for shim" — which must mean "no fnox here", not a failed check.
         if command -v fnox > /dev/null && fnox --version > /dev/null 2>&1; then
+          # An empty WB_ENV would silently check the base (development) secrets instead of the
+          # profile the job actually runs with, so require it whenever a fnox config exists.
+          if [[ -z "$WB_ENV" && -n "$(FNOX_NON_INTERACTIVE=true fnox config-files 2> /dev/null)" ]]; then
+            report 'WB_ENV is not defined; the calling workflow must export it (e.g. via the "environment" input) so the matching fnox profile is checked'
+          fi
           if ! run_check .; then
             report 'fnox secrets cannot be resolved; check the FNOX_AGE_KEY secret'
           fi
