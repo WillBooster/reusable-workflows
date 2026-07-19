@@ -414,6 +414,8 @@ jobs:
             git diff -- . "${excludes[@]}"
             : # Push-back over the SSH origin (to re-trigger downstream workflows) is only wired up
             : # by the self-hosted manual checkout; on hosted runners we fail so the diff is visible.
+            : # RUNNER_ENVIRONMENT is exported to every step by the runner itself (it mirrors the
+            : # runner.environment context, alongside RUNNER_OS/RUNNER_TEMP), so it needs no env: entry.
             if [[ "$RUNNER_ENVIRONMENT" == "self-hosted" ]]; then
               git add -A -- . "${excludes[@]}"
               git commit -m "fix: apply changes of autofix workflow" --no-verify
