@@ -215,9 +215,9 @@ jobs:
           cp .yarnrc.yml "$YARNRC_BACKUP"
           echo "YARNRC_BACKUP=$YARNRC_BACKUP" >> "$GITHUB_ENV"
           : # Drop the top-level `plugins:` block (from `plugins:` up to the next top-level
-          : # key); keep every other line untouched.
+          : # key; column-0 comments do not end the block); keep every other line untouched.
           YARNRC_TMP=$(mktemp "$RUNNER_TEMP/yarnrc-sanitized.XXXXXX")
-          awk '/^plugins:/ { skip = 1; next } skip && /^[^[:space:]]/ { skip = 0 } !skip' "$YARNRC_BACKUP" > "$YARNRC_TMP"
+          awk '/^plugins:/ { skip = 1; next } skip && /^[^[:space:]#]/ { skip = 0 } !skip' "$YARNRC_BACKUP" > "$YARNRC_TMP"
           : # Replace with mv instead of writing into the file, so a committed symlink cannot
           : # redirect the write (the .npmrc generation pattern).
           rm -f .yarnrc.yml
