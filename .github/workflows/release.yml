@@ -44,10 +44,6 @@ on:
       VERDACCIO_TOKEN:
         description: auth token for the private Verdaccio registry (used to generate .npmrc)
         required: false
-      GH_PACKAGES_TOKEN:
-        required: false
-      GH_PKG_READ_TOKEN:
-        required: false
 
 jobs:
   release:
@@ -226,7 +222,6 @@ jobs:
             }
           fi
         env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # Replay the lifecycle scripts the credentialed install skipped, in an environment without
       # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
@@ -253,8 +248,6 @@ jobs:
               ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }}
             }
           fi
-        env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
@@ -346,7 +339,6 @@ jobs:
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
           # The release script's npm invocations expand ${VERDACCIO_TOKEN} from the generated .npmrc.
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
-          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
           HUSKY: 0
           LEFTHOOK: 0
 

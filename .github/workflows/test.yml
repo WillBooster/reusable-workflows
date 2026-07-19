@@ -42,8 +42,6 @@ on:
       FNOX_AGE_KEY:
         description: age secret key to decrypt fnox.toml secrets
         required: false
-      GH_PKG_READ_TOKEN:
-        required: false
       GH_TOKEN:
         required: true
       VERDACCIO_TOKEN:
@@ -342,7 +340,6 @@ jobs:
             }
           fi
         env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # Replay the lifecycle scripts the credentialed install skipped, in an environment without
       # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
@@ -369,8 +366,6 @@ jobs:
               ${{ steps.env-info.outputs.runner }} install --no-immutable ${{ steps.env-info.outputs.skip-scripts-option }}
             }
           fi
-        env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "common/ci-setup" npm script if exists
         run: if grep -q '"common/ci-setup":' package.json; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi

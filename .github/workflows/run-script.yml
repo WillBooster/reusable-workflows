@@ -73,8 +73,6 @@ on:
         required: false
       GH_TOKEN:
         required: false
-      GH_PKG_READ_TOKEN:
-        required: false
       VERDACCIO_TOKEN:
         description: auth token for the private Verdaccio registry (used to generate .npmrc)
         required: false
@@ -253,7 +251,6 @@ jobs:
             ${{ steps.env-info.outputs.runner }} install
           fi
         env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # Replay the lifecycle scripts the credentialed install skipped, in an environment without
       # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
@@ -277,8 +274,6 @@ jobs:
             fi
             ${{ steps.env-info.outputs.runner }} install
           fi
-        env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
 
       - name: Run "common/ci-setup" npm script if exists
         run: if [[ "$(cat package.json)" == *'"common/ci-setup":'* ]]; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi

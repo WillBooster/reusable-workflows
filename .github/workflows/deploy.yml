@@ -89,8 +89,6 @@ on:
         required: false
       GH_TOKEN:
         required: false
-      GH_PKG_READ_TOKEN:
-        required: false
       RAILWAY_API_TOKEN:
         required: false
       VERDACCIO_TOKEN:
@@ -367,7 +365,6 @@ jobs:
             }
           fi
         env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # Replay the lifecycle scripts the credentialed install skipped, in an environment without
       # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
@@ -394,8 +391,6 @@ jobs:
               ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }}
             }
           fi
-        env:
-          GH_PKG_READ_TOKEN: ${{ secrets.GH_PKG_READ_TOKEN }}
 
       - if: ${{ env.HAS_GCP_SA_KEY_JSON_FOR_FIREBASE == 'true' }}
         name: Create credential file for Firebase
