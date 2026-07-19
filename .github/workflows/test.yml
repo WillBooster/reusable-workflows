@@ -137,9 +137,14 @@ jobs:
           paths_ignore: ${{ inputs.paths_ignore }}
       - name: Clear stale skip-worktree bits left by a crashed previous run
         uses: WillBooster/reusable-workflows/.github/actions/clear-stale-skip-worktree@main
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && !github.event.repository.private }}
+      # actions/checkout uses HTTPS + GITHUB_TOKEN, which works on GitHub-hosted runners even for
+      # private repos. The manual SSH checkout below is only viable on self-hosted runners (which
+      # carry an SSH deploy key and a persistent workspace), so the split keys off the actual
+      # runner environment, NOT repository visibility: a private repo forced onto a hosted runner
+      # via `github_hosted_runner`/`runs_on` has no SSH key and must take the actions/checkout path.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment != 'self-hosted' }}
         uses: actions/checkout@v7.0.0
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event.repository.private }}
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment == 'self-hosted' }}
         # Branch names are attacker-controlled script-injection sources, so they reach the
         # shell only via env and are always quoted.
         run: |
@@ -407,7 +412,9 @@ jobs:
           if [[ -n "$(git status --porcelain -- . "${excludes[@]}")" ]]; then
             git status
             git diff -- . "${excludes[@]}"
-            if [[ "${{ github.event.repository.private }}" == "true" ]]; then
+            : # Push-back over the SSH origin (to re-trigger downstream workflows) is only wired up
+            : # by the self-hosted manual checkout; on hosted runners we fail so the diff is visible.
+            if [[ "$RUNNER_ENVIRONMENT" == "self-hosted" ]]; then
               git add -A -- . "${excludes[@]}"
               git commit -m "fix: apply changes of autofix workflow" --no-verify
               git push origin "HEAD:refs/heads/$HEAD_REF" --no-verify
