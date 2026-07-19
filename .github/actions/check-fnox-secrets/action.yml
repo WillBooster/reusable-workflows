@@ -36,9 +36,10 @@ runs:
         EMPTY_FNOX_CONFIG_DIR="$(mktemp -d)"
         trap 'rm -rf "$EMPTY_FNOX_CONFIG_DIR"' EXIT
         # Exit codes: 0 = passed or nothing to check, 3 = WB_ENV undefined, 4 = WB_ENV names no
-        # declared profile, 5 = fnox configuration unreadable, 6 = secret resolution failure.
+        # declared profile, 5 = fnox configuration unreadable, 6 = secret resolution failure,
+        # 7 = the directory itself cannot be entered.
         run_check() (
-          cd "$1" || exit 5
+          cd "$1" || exit 7
           check_root="$(pwd -P)"
           config_files="$(FNOX_NON_INTERACTIVE=true fnox config-files)" || exit 5
           # `fnox config-files` also lists GLOBAL configs, which exist on persistent self-hosted
@@ -90,7 +91,14 @@ runs:
               exit 4
             fi
           fi
-          FNOX_NON_INTERACTIVE=true fnox export "${FNOX_ARGS[@]}" > /dev/null || exit 6
+          if ! export_error="$(FNOX_NON_INTERACTIVE=true fnox export "${FNOX_ARGS[@]}" 2>&1 > /dev/null)"; then
+            printf '%s\n' "$export_error" >&2
+            # fnox classifies its own errors: a configuration problem (fnox::config::*, e.g. a
+            # malformed profile-specific file that only export parses) must not be blamed on the
+            # age key.
+            if grep -qF 'fnox::config' <<< "$export_error"; then exit 5; fi
+            exit 6
+          fi
         )
         report() {
           # $2: consequence sentence appended only in warning mode, specific to the failed check.
@@ -118,7 +126,11 @@ runs:
                 'this run did not validate the profile-specific secrets'
               ;;
             5)
-              report "the fnox configuration$2 cannot be read (fnox config-files failed); fix the fnox config files — this is not an FNOX_AGE_KEY problem" \
+              report "the fnox configuration$2 cannot be read or parsed; fix the fnox config files — this is not an FNOX_AGE_KEY problem" \
+                'this run did not validate the fnox secrets'
+              ;;
+            7)
+              report "the directory$2 does not exist or cannot be entered; fix the working_directory input" \
                 'this run did not validate the fnox secrets'
               ;;
             *)
