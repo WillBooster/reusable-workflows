@@ -62,8 +62,10 @@ jobs:
       FORCE_COLOR: 3
       NODE_OPTIONS: --max-old-space-size=4096
       # arguments
-      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
-      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+      # FNOX_AGE_KEY is deliberately NOT job-wide: like VERDACCIO_TOKEN, it is provided
+      # step-scoped only to the steps that actually run fnox (the check-fnox-secrets action and
+      # the consumer script steps), so dependency lifecycle scripts run by the installs and the
+      # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN secret itself is
@@ -116,6 +118,9 @@ jobs:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
       - name: Ensure fnox secrets are resolvable
         uses: WillBooster/reusable-workflows/.github/actions/check-fnox-secrets@main
+        env:
+          # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - name: Show environment information
         id: env-info
         # https://stackoverflow.com/a/677212
@@ -288,6 +293,10 @@ jobs:
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
+        env:
+          # The consumer build script loads env vars through wb/fnox (step-scoped; see the fnox
+          # check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       # After waiting in the concurrency queue, a run can be older than the branch head a
       # later run already released from; releasing from the stale checkout could publish a
       # lower version after a higher one. GitHub does not guarantee queue ordering, so skip
@@ -371,6 +380,11 @@ jobs:
             node node_modules/semantic-release/bin/semantic-release.js
           fi
         env:
+          # The consumer release script loads env vars through wb/fnox (step-scoped; see the
+          # fnox check step above). Known residual risk, same as VERDACCIO_TOKEN here:
+          # `wb release` clean-reinstalls with lifecycle scripts enabled while this step's
+          # credentials are in the environment (shared#1003).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}

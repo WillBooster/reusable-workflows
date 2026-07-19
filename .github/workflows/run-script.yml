@@ -83,8 +83,10 @@ jobs:
     runs-on: ${{ (inputs.runs_on && fromJSON(inputs.runs_on)) || ((!github.event.repository.private || inputs.github_hosted_runner) && 'ubuntu-latest') || (inputs.cpu_arch && fromJSON(format('["self-hosted", "{0}", "{1}"]', inputs.ci_label, inputs.cpu_arch))) || fromJSON(format('["self-hosted", "{0}"]', inputs.ci_label)) }}
     env:
       FORCE_COLOR: 3
-      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
-      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+      # FNOX_AGE_KEY is deliberately NOT job-wide: like VERDACCIO_TOKEN, it is provided
+      # step-scoped only to the steps that actually run fnox (the check-fnox-secrets action and
+      # the consumer script steps), so dependency lifecycle scripts run by the installs and the
+      # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
@@ -158,6 +160,9 @@ jobs:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
       - name: Ensure fnox secrets are resolvable
         uses: WillBooster/reusable-workflows/.github/actions/check-fnox-secrets@main
+        env:
+          # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - name: Show environment information
         id: env-info
         run: |
@@ -315,6 +320,8 @@ jobs:
       - name: Run "common/ci-setup" npm script if exists
         run: if [[ "$(cat package.json)" == *'"common/ci-setup":'* ]]; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi
         env:
+          # Consumer hooks load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           # Consumer hooks may install private packages (e.g. `bunx @willbooster-private/...`),
           # which expand ${VERDACCIO_TOKEN} from the generated .npmrc at run time.
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
@@ -331,6 +338,9 @@ jobs:
         env:
           COMMAND: ${{ inputs.command }}
           COMMAND_ARGS: ${{ inputs.command_args }}
+          # The consumer script loads env vars through wb/fnox (step-scoped; see the fnox check
+          # step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           # Consumer maintenance scripts may install private packages (e.g. `bunx
           # @willbooster-private/...`), which expand ${VERDACCIO_TOKEN} from the generated .npmrc.
