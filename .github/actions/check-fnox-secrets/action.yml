@@ -83,8 +83,10 @@ runs:
             profile_config_files="$(FNOX_CONFIG_DIR="$EMPTY_FNOX_CONFIG_DIR" FNOX_NON_INTERACTIVE=true fnox config-files --profile "$WB_ENV")" || exit 5
             # Profile rows are indented; the header and fnox's synthesized `default` row are not
             # declarations.
+            # Both supported profile-file basenames count (fnox.<name>.toml and the hidden
+            # .fnox.<name>.toml), matching the chain walk above.
             if ! awk '/^  /{ print $1 }' <<< "$declared_profiles" | grep -vxF default | grep -qxF -- "$WB_ENV" &&
-              ! { grep -F "$REPO_ROOT/" <<< "$profile_config_files" | grep -qF -- "/fnox.$WB_ENV.toml"; }; then
+              ! { grep -F "$REPO_ROOT/" <<< "$profile_config_files" | grep -qE -- "/\.?fnox\.$WB_ENV\.toml$"; }; then
               exit 4
             fi
           fi
