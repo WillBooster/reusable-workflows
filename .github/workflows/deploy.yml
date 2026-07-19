@@ -104,8 +104,10 @@ jobs:
       # constants
       PYTHON_VERSION: 3.13.9
       # arguments
-      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
-      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+      # FNOX_AGE_KEY is deliberately NOT job-wide: like VERDACCIO_TOKEN, it is provided
+      # step-scoped only to the steps that actually run fnox (the check-fnox-secrets action and
+      # the consumer script steps), so dependency lifecycle scripts run by the installs and the
+      # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FLY_API_TOKEN: ${{ !!secrets.FLY_API_TOKEN }}
@@ -208,6 +210,9 @@ jobs:
         uses: WillBooster/reusable-workflows/.github/actions/check-fnox-secrets@main
         with:
           working_directory: ${{ inputs.working_directory }}
+        env:
+          # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - if: ${{ steps.check-gcloud.outputs.require-gcloud }}
         name: Install gcloud with mise
         uses: nick-fields/retry@dd56f1ca8ca991e2385c18ab6dd36ea7f9fdb55f
@@ -479,6 +484,8 @@ jobs:
       - name: Run "common/ci-setup" npm script if exists
         run: bash "$RUNNER_TEMP/run-ci-setup.sh" common/ci-setup
         env:
+          # Consumer hooks load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           # Consumer hooks may install private packages (e.g. `bunx @willbooster-private/...`),
           # which expand ${VERDACCIO_TOKEN} from the generated .npmrc at run time.
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
@@ -498,6 +505,9 @@ jobs:
             ${{ steps.env-info.outputs.runner }} run ${{ inputs.deploy_command || 'deploy' }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          # The deploy/ci-setup hook and the deploy script load env vars through wb/fnox
+          # (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}

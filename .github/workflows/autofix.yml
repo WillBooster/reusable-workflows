@@ -23,8 +23,10 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (!inputs.target_organization || github.repository_owner == inputs.target_organization) }}
     runs-on: self-hosted
     env:
-      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
-      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+      # FNOX_AGE_KEY is deliberately NOT job-wide: like VERDACCIO_TOKEN, it is provided
+      # step-scoped only to the steps that actually run fnox (the check-fnox-secrets action and
+      # the "Fix code" step), so dependency lifecycle scripts run by the installs and the
+      # lifecycle replay below can never read the long-lived age identity (#458).
       # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN secret itself is
       # provided step-scoped only to the steps whose package-manager invocations expand it
       # from the generated .npmrc.
@@ -85,6 +87,9 @@ jobs:
         uses: WillBooster/reusable-workflows/.github/actions/check-fnox-secrets@main
         with:
           mode: warning
+        env:
+          # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - name: Show environment information
         id: env-info
         # https://stackoverflow.com/a/677212
@@ -267,6 +272,9 @@ jobs:
             git push origin "HEAD:refs/heads/$HEAD_REF" --no-verify
           fi
         env:
+          # Consumer gen-code/cleanup/build scripts load env vars through wb/fnox (step-scoped;
+          # see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           HEAD_REF: ${{ github.head_ref }}
           HUSKY: 0
           LEFTHOOK: 0

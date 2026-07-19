@@ -108,8 +108,10 @@ jobs:
       FORCE_COLOR: 3
       NODE_OPTIONS: --max-old-space-size=4096
       # arguments
-      # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
-      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+      # FNOX_AGE_KEY is deliberately NOT job-wide: like VERDACCIO_TOKEN, it is provided
+      # step-scoped only to the steps that actually run fnox (the check-fnox-secrets action and
+      # the consumer script steps), so dependency lifecycle scripts run by the installs and the
+      # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_TEST_COMMAND: ${{ !!inputs.custom_test_command }}
       # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN secret itself is
@@ -208,6 +210,9 @@ jobs:
         uses: WillBooster/reusable-workflows/.github/actions/check-fnox-secrets@main
         with:
           mode: warning
+        env:
+          # Empty when the caller does not provide the secret, which keeps fnox-less consumers unaffected.
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Show environment information
         id: env-info
@@ -406,6 +411,9 @@ jobs:
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "common/ci-setup" npm script if exists
         run: if grep -q '"common/ci-setup":' package.json; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi
+        env:
+          # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "test/ci-setup" npm script if exists
         run: |
@@ -414,6 +422,9 @@ jobs:
           elif grep -q '"playwright"' package.json; then
             ${{ steps.env-info.outputs.runner }} playwright install
           fi
+        env:
+          # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Fix code
         run: |
@@ -459,6 +470,8 @@ jobs:
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
+          # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           HEAD_REF: ${{ github.head_ref || github.ref_name }}
       # Typecheck must be executed after `gen-code`
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
@@ -469,6 +482,9 @@ jobs:
             rm -Rf .next
             ${{ steps.env-info.outputs.runner }} run typecheck
           fi
+        env:
+          # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Test
         run: |
@@ -480,6 +496,8 @@ jobs:
             ${{ steps.env-info.outputs.runner }} run test
           fi
         env:
+          # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run lint-staged
@@ -491,6 +509,10 @@ jobs:
             done
             ${{ steps.env-info.outputs.runner }} run lint-staged --allow-empty
           fi
+        env:
+          # lint-staged entries are consumer-defined commands that may load env vars through
+          # wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       # Note: `env.GITHUB_TOKEN` here reads this step's own step-level env (the runner merges a
       # step's `env:` into the `env` context before evaluating its `if:`); consumer runs show the
       # step executing, so this gate is live, not dead.
@@ -509,6 +531,9 @@ jobs:
             fi
           fi
         env:
+          # The consumer release-test script may load env vars through wb/fnox (step-scoped;
+          # see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
