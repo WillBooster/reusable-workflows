@@ -59,9 +59,6 @@ on:
       target_organization:
         required: false
         type: string
-      version:
-        required: false
-        type: string
       working_directory:
         # Deploy target directory (e.g. packages/server for a monorepo Worker). The "common/ci-setup"
         # and "deploy/ci-setup" hooks are looked up here first and in the repository root as a
