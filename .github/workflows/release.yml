@@ -269,34 +269,25 @@ jobs:
       # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
       # .npmrc/.yarnrc.yml expanding to '' instead of erroring). Every package is already in the
       # package manager's cache from the step above, so the private registry is not contacted.
-      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' }}
+      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' && steps.env-info.outputs.runner != 'bun' }}
         name: Run dependency lifecycle scripts without registry credentials
         run: |
-          if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
-            : # A repeated `bun install` is a no-op that does not replay skipped scripts, so
-            : # force a full cache-hit re-link.
+          if [[ "${{ steps.env-info.outputs.skip-scripts-option }}" == "--ignore-scripts" ]]; then
+            : # yarn1 reports "Already up-to-date" and skips scripts unless node_modules is
+            : # removed; Yarn Berry instead tracks unbuilt packages and rebuilds them itself.
             rm -rf node_modules
-            bun install || {
-              : # Keep postinstall failures tolerated (consumers rely on it) while still leaving
-              : # a complete node_modules behind — e.g. a repository postinstall that loads fnox
-              : # secrets cannot decrypt here because FNOX_AGE_KEY is deliberately step-scoped away.
-              echo "::warning::Lifecycle scripts failed; completing the install without them"
-              rm -rf node_modules
-              bun install --ignore-scripts
-            }
-          else
-            if [[ "${{ steps.env-info.outputs.skip-scripts-option }}" == "--ignore-scripts" ]]; then
-              : # yarn1 reports "Already up-to-date" and skips scripts unless node_modules is
-              : # removed; Yarn Berry instead tracks unbuilt packages and rebuilds them itself.
-              rm -rf node_modules
-            fi
-            ${{ steps.env-info.outputs.runner }} install || {
-              : # Keep postinstall failures tolerated (consumers rely on it) while still leaving
-              : # a complete node_modules behind.
-              echo "::warning::Lifecycle scripts failed; completing the install without them"
-              ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }}
-            }
           fi
+          ${{ steps.env-info.outputs.runner }} install || {
+            : # Keep postinstall failures tolerated (consumers rely on it) while still leaving
+            : # a complete node_modules behind.
+            echo "::warning::Lifecycle scripts failed; completing the install without them"
+            ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }}
+          }
+      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' && steps.env-info.outputs.runner == 'bun' }}
+        name: Run Bun lifecycle scripts without registry credentials
+        uses: WillBooster/reusable-workflows/.github/actions/run-bun-lifecycle-scripts@main
+        with:
+          tolerate_failure: 'true'
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi

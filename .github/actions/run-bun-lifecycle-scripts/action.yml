@@ -1,0 +1,16 @@
+name: Run Bun lifecycle scripts
+description: >-
+  Replay trusted dependency and repository lifecycle scripts after an authenticated
+  bun install --ignore-scripts, without reinstalling packages or exposing registry credentials.
+inputs:
+  tolerate_failure:
+    description: Annotate lifecycle failures as warnings instead of failing the step.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Replay Bun lifecycle scripts
+      shell: bash
+      env:
+        TOLERATE_LIFECYCLE_FAILURE: ${{ inputs.tolerate_failure }}
+      run: bun "$GITHUB_ACTION_PATH/run.mjs"

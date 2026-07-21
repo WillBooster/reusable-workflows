@@ -300,22 +300,18 @@ jobs:
       # package manager's cache from the step above, so the private registry is not contacted.
       # Unlike the other workflows, lifecycle failures are NOT tolerated here: a maintenance
       # script run against a half-installed dependency graph could silently misbehave.
-      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' }}
+      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' && steps.env-info.outputs.runner != 'bun' }}
         name: Run dependency lifecycle scripts without registry credentials
         run: |
-          if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
-            : # A repeated `bun install` is a no-op that does not replay skipped scripts, so
-            : # force a full cache-hit re-link.
+          if [[ "${{ steps.env-info.outputs.skip-scripts-option }}" == "--ignore-scripts" ]]; then
+            : # yarn1 reports "Already up-to-date" and skips scripts unless node_modules is
+            : # removed; Yarn Berry instead tracks unbuilt packages and rebuilds them itself.
             rm -rf node_modules
-            bun install
-          else
-            if [[ "${{ steps.env-info.outputs.skip-scripts-option }}" == "--ignore-scripts" ]]; then
-              : # yarn1 reports "Already up-to-date" and skips scripts unless node_modules is
-              : # removed; Yarn Berry instead tracks unbuilt packages and rebuilds them itself.
-              rm -rf node_modules
-            fi
-            ${{ steps.env-info.outputs.runner }} install
           fi
+          ${{ steps.env-info.outputs.runner }} install
+      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' && steps.env-info.outputs.runner == 'bun' }}
+        name: Run Bun lifecycle scripts without registry credentials
+        uses: WillBooster/reusable-workflows/.github/actions/run-bun-lifecycle-scripts@main
 
       - name: Run "common/ci-setup" npm script if exists
         run: if [[ "$(cat package.json)" == *'"common/ci-setup":'* ]]; then ${{ steps.env-info.outputs.runner }} run common/ci-setup; fi
