@@ -41,6 +41,9 @@ on:
         required: false
       GH_TOKEN:
         required: true
+      TAKUMI_GUARD_TOKEN:
+        description: auth token for the Takumi Guard malicious-package-blocking registry proxy (used to generate .npmrc)
+        required: false
       VERDACCIO_TOKEN:
         description: auth token for the private Verdaccio registry (used to generate .npmrc)
         required: false
@@ -68,13 +71,19 @@ jobs:
       # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
-      # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN secret itself is
-      # provided step-scoped only to the steps whose package-manager invocations expand it
-      # from the generated .npmrc.
+      # Either registry token selects the hardened install path below (scripts-disabled
+      # credentialed install + tokenless lifecycle replay) and the .npmrc generation/cleanup.
+      HAS_REGISTRY_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.TAKUMI_GUARD_TOKEN }}
+      HAS_TAKUMI_GUARD_TOKEN: ${{ !!secrets.TAKUMI_GUARD_TOKEN }}
+      # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN and TAKUMI_GUARD_TOKEN
+      # secrets themselves are provided step-scoped only to the steps whose package-manager
+      # invocations expand them from the generated .npmrc.
       HAS_VERDACCIO_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN }}
-      # Defined-but-empty default: yarn1 crashes with "Failed to replace env in config" when a
+      # Defined-but-empty defaults: yarn1 crashes with "Failed to replace env in config" when a
       # .npmrc references an UNDEFINED env var (an empty one is fine), so steps that are not
-      # given the secret still need the variable to exist while the generated .npmrc is on disk.
+      # given the secrets still need the variables to exist while the generated .npmrc is on
+      # disk (the Takumi Guard proxy also serves anonymously, so an empty token still installs).
+      TAKUMI_GUARD_TOKEN: ''
       VERDACCIO_TOKEN: ''
       # The `||` also covers a caller passing an EMPTY string (e.g. an unset vars.* reference),
       # which would override the input's declared default.
@@ -157,16 +166,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-v1-
 
-      # ${VERDACCIO_TOKEN} is written literally; npm/bun/yarn1 expand it from the environment at
-      # install time, so no plaintext token lands on disk. The file goes into the workspace, NOT
-      # ~/.npmrc: a persistent ~/.npmrc would crash npm/yarn1 in any other job on the same
-      # self-hosted runner that leaves VERDACCIO_TOKEN undefined. The managed lines are rewritten
-      # authoritatively so stale entries never win over the current token, and the file is hidden
-      # from git (a root-scoped exclude entry, or skip-worktree when the consumer tracks .npmrc)
-      # so commit-and-push workflows cannot commit it. Yarn Berry ignores .npmrc; Berry consumers
-      # must reference ${VERDACCIO_TOKEN} from their committed .yarnrc.yml instead.
-      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' }}
-        name: Generate .npmrc for the private Verdaccio registry
+      # ${VERDACCIO_TOKEN} / ${TAKUMI_GUARD_TOKEN} are written literally; npm/bun/yarn1 expand
+      # them from the environment at install time, so no plaintext token lands on disk. The file
+      # goes into the workspace, NOT ~/.npmrc: a persistent ~/.npmrc would crash npm/yarn1 in any
+      # other job on the same self-hosted runner that leaves the variables undefined. The managed
+      # lines are rewritten authoritatively so stale entries never win over the current tokens,
+      # and the file is hidden from git (a root-scoped exclude entry, or skip-worktree when the
+      # consumer tracks .npmrc) so commit-and-push workflows cannot commit it. Yarn Berry ignores
+      # .npmrc; Berry consumers must reference ${VERDACCIO_TOKEN} from their committed
+      # .yarnrc.yml instead (and Takumi Guard does not apply to Berry installs).
+      - if: ${{ env.HAS_REGISTRY_TOKEN == 'true' }}
+        name: Generate .npmrc for the private Verdaccio registry and Takumi Guard
         run: |
           : # Recover state a crashed previous run may have left behind (the always() cleanup
           : # cannot run when the runner dies): clear a stale skip-worktree bit and restore the
@@ -177,12 +187,21 @@ jobs:
           fi
           NPMRC_TMP=$(mktemp "$RUNNER_TEMP/npmrc.XXXXXX")
           if [[ -e .npmrc ]]; then
-            grep -vE '^(@willbooster-private:registry|//verdaccio-production-e389\.up\.railway\.app/:_authToken)' .npmrc > "$NPMRC_TMP" || true
+            grep -vE '^(registry=|@willbooster-private:registry|//(verdaccio-production-e389\.up\.railway\.app|npm\.flatt\.tech)/:_authToken)' .npmrc > "$NPMRC_TMP" || true
             : # Some grep implementations do not add the final newline missing from the last line.
             if [[ -s "$NPMRC_TMP" && -n "$(tail -c1 "$NPMRC_TMP")" ]]; then echo >> "$NPMRC_TMP"; fi
           fi
-          echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/' >> "$NPMRC_TMP"
-          echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}' >> "$NPMRC_TMP"
+          if [[ "$HAS_TAKUMI_GUARD_TOKEN" == "true" ]]; then
+            : # Route default-registry installs through the Takumi Guard proxy, which blocks
+            : # known-malicious packages (https://flatt.tech/takumi/features/guard). Scoped
+            : # registries (e.g. @willbooster-private) deliberately keep their own registry.
+            echo 'registry=https://npm.flatt.tech/' >> "$NPMRC_TMP"
+            echo '//npm.flatt.tech/:_authToken=${TAKUMI_GUARD_TOKEN}' >> "$NPMRC_TMP"
+          fi
+          if [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+            echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/' >> "$NPMRC_TMP"
+            echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}' >> "$NPMRC_TMP"
+          fi
           : # Replace .npmrc with mv instead of writing into it, so a consumer-committed symlink
           : # cannot redirect the managed lines into its target (e.g. a persistent home npmrc).
           rm -f .npmrc
@@ -201,12 +220,12 @@ jobs:
           fi
       # Yarn Berry loads `.yarnrc.yml` plugins during every yarn command, including the
       # credentialed install below, so a repository-committed plugin is config-driven code
-      # execution that can read the step-scoped VERDACCIO_TOKEN (#453). Strip the top-level
+      # execution that can read the step-scoped registry tokens (#453). Strip the top-level
       # `plugins:` block for the credentialed install only and restore the original file
       # right after it, so plugins still apply to the tokenless lifecycle replay. Residual
       # risk (out of scope here): the committed yarnPath release in .yarn/releases/ also
       # executes during the credentialed install.
-      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' && steps.env-info.outputs.runner != 'bun' && steps.env-info.outputs.skip-scripts-option != '--ignore-scripts' }}
+      - if: ${{ env.HAS_REGISTRY_TOKEN == 'true' && steps.env-info.outputs.runner != 'bun' && steps.env-info.outputs.skip-scripts-option != '--ignore-scripts' }}
         name: Remove plugins from .yarnrc.yml for the credentialed install
         run: |
           if [[ ! -f .yarnrc.yml ]]; then exit 0; fi
@@ -227,19 +246,20 @@ jobs:
           : # redirect the write (the .npmrc generation pattern).
           rm -f .yarnrc.yml
           mv "$YARNRC_TMP" .yarnrc.yml
-      # With a Verdaccio token, resolve and download with lifecycle scripts disabled so
-      # repository- or dependency-defined preinstall/postinstall can never read the step-scoped
-      # VERDACCIO_TOKEN (#449); the tokenless step below replays the skipped scripts.
+      # With a registry token (Verdaccio and/or Takumi Guard), resolve and download with
+      # lifecycle scripts disabled so repository- or dependency-defined preinstall/postinstall
+      # can never read the step-scoped tokens (#449); the tokenless step below replays the
+      # skipped scripts.
       - name: Install dependencies
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
-            if [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+            if [[ "$HAS_REGISTRY_TOKEN" == "true" ]]; then
               bun install --ignore-scripts
             else
               # Because bun sometimes fails to install private repos (but, update is okay)
               bun install
             fi
-          elif [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+          elif [[ "$HAS_REGISTRY_TOKEN" == "true" ]]; then
             : # No lifecycle scripts run here, so a single retry only covers transient network
             : # failures; a reproducible failure is a resolution, auth or lockfile error.
             ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }} || \
@@ -255,6 +275,7 @@ jobs:
             }
           fi
         env:
+          TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # always(): the original .yarnrc.yml must come back even when the credentialed
       # install fails, both for the tokenless lifecycle replay below and so the sanitized
@@ -266,10 +287,11 @@ jobs:
           rm -f .yarnrc.yml
           mv "$YARNRC_BACKUP" .yarnrc.yml
       # Replay the lifecycle scripts the credentialed install skipped, in an environment without
-      # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
-      # .npmrc/.yarnrc.yml expanding to '' instead of erroring). Every package is already in the
-      # package manager's cache from the step above, so the private registry is not contacted.
-      - if: ${{ env.HAS_VERDACCIO_TOKEN == 'true' }}
+      # the registry tokens (the job-level empty values keep ${VERDACCIO_TOKEN} and
+      # ${TAKUMI_GUARD_TOKEN} references in .npmrc/.yarnrc.yml expanding to '' instead of
+      # erroring). Every package is already in the package manager's cache from the step above,
+      # so the private registry is not contacted (and Takumi Guard serves anonymously anyway).
+      - if: ${{ env.HAS_REGISTRY_TOKEN == 'true' }}
         name: Run dependency lifecycle scripts without registry credentials
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
@@ -395,7 +417,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
-          # The release script's npm invocations expand ${VERDACCIO_TOKEN} from the generated .npmrc.
+          # The release script's npm invocations expand these tokens from the generated .npmrc.
+          TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
           HUSKY: 0
           LEFTHOOK: 0
@@ -521,7 +544,7 @@ jobs:
       # Revert the generate step: remove the file when this run created it, or restore the
       # committed content and clear the skip-worktree bit when the consumer tracks .npmrc; the
       # `.git` mutations otherwise outlive the job on persistent self-hosted workspaces.
-      - if: ${{ always() && env.HAS_VERDACCIO_TOKEN == 'true' }}
+      - if: ${{ always() && env.HAS_REGISTRY_TOKEN == 'true' }}
         name: Clean up the generated .npmrc
         run: |
           if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then

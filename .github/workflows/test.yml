@@ -44,6 +44,9 @@ on:
         required: false
       GH_TOKEN:
         required: true
+      TAKUMI_GUARD_TOKEN:
+        description: auth token for the Takumi Guard malicious-package-blocking registry proxy (used to generate .npmrc)
+        required: false
       VERDACCIO_TOKEN:
         description: auth token for the private Verdaccio registry (used to generate .npmrc)
         required: false
@@ -113,14 +116,20 @@ jobs:
       # the consumer script steps), so dependency lifecycle scripts run by the installs and the
       # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
+      # Either registry token selects the hardened install path below (scripts-disabled
+      # credentialed install + tokenless lifecycle replay) and the .npmrc generation/cleanup.
+      HAS_REGISTRY_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.TAKUMI_GUARD_TOKEN }}
+      HAS_TAKUMI_GUARD_TOKEN: ${{ !!secrets.TAKUMI_GUARD_TOKEN }}
       HAS_TEST_COMMAND: ${{ !!inputs.custom_test_command }}
-      # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN secret itself is
-      # provided step-scoped only to the steps whose package-manager invocations expand it
-      # from the generated .npmrc.
+      # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN and TAKUMI_GUARD_TOKEN
+      # secrets themselves are provided step-scoped only to the steps whose package-manager
+      # invocations expand them from the generated .npmrc.
       HAS_VERDACCIO_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN }}
-      # Defined-but-empty default: yarn1 crashes with "Failed to replace env in config" when a
+      # Defined-but-empty defaults: yarn1 crashes with "Failed to replace env in config" when a
       # .npmrc references an UNDEFINED env var (an empty one is fine), so steps that are not
-      # given the secret still need the variable to exist while the generated .npmrc is on disk.
+      # given the secrets still need the variables to exist while the generated .npmrc is on
+      # disk (the Takumi Guard proxy also serves anonymously, so an empty token still installs).
+      TAKUMI_GUARD_TOKEN: ''
       VERDACCIO_TOKEN: ''
       WB_ENV: ${{ inputs.environment || 'test' }}
     strategy:
@@ -137,37 +146,18 @@ jobs:
           paths_ignore: ${{ inputs.paths_ignore }}
       - name: Clear stale skip-worktree bits left by a crashed previous run
         uses: WillBooster/reusable-workflows/.github/actions/clear-stale-skip-worktree@main
-      # actions/checkout uses HTTPS + GITHUB_TOKEN, which works on GitHub-hosted runners even for
-      # private repos. The manual SSH checkout below is only viable on self-hosted runners (which
-      # carry an SSH deploy key and a persistent workspace), so the split keys off the actual
-      # runner environment, NOT repository visibility: a private repo forced onto a hosted runner
-      # via `github_hosted_runner`/`runs_on` has no SSH key and must take the actions/checkout path.
+      # actions/checkout authenticates over HTTPS with GITHUB_TOKEN on both hosted and
+      # self-hosted runners, so self-hosted runners need no SSH deploy key; its persisted
+      # credential also authenticates the push-back in the "Fix code" step below (and the
+      # post-job cleanup removes it from .git/config on persistent workspaces). Self-hosted
+      # runners check out the head BRANCH instead of the default pull-request merge ref so
+      # "Fix code" can commit and push onto it.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment != 'self-hosted' }}
         uses: actions/checkout@v7.0.0
       - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment == 'self-hosted' }}
-        # Branch names are attacker-controlled script-injection sources, so they reach the
-        # shell only via env and are always quoted.
-        run: |
-          if [[ ! -d .git ]]; then
-            git init --initial-branch=main
-          else
-            rm -f .git/shallow.lock
-          fi
-
-          git remote set-url origin git@github.com:${{ github.repository }}.git || git remote add origin git@github.com:${{ github.repository }}.git
-          # The refs/heads/ prefix keeps an option-like branch name (e.g. `--help`) from being
-          # parsed as a git option.
-          git fetch --depth 1 origin "refs/heads/$HEAD_REF"
-
-          git reset --hard
-          git clean -fdX
-          if ! git checkout -B "$HEAD_REF" "origin/$HEAD_REF"; then
-            git clean -fdx
-            git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
-          fi
-          git reset --hard "origin/$HEAD_REF"
-        env:
-          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
@@ -275,16 +265,17 @@ jobs:
           WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
 
-      # ${VERDACCIO_TOKEN} is written literally; npm/bun/yarn1 expand it from the environment at
-      # install time, so no plaintext token lands on disk. The file goes into the workspace, NOT
-      # ~/.npmrc: a persistent ~/.npmrc would crash npm/yarn1 in any other job on the same
-      # self-hosted runner that leaves VERDACCIO_TOKEN undefined. The managed lines are rewritten
-      # authoritatively so stale entries never win over the current token, and the file is hidden
-      # from git (a root-scoped exclude entry, or skip-worktree when the consumer tracks .npmrc)
-      # so commit-and-push workflows cannot commit it. Yarn Berry ignores .npmrc; Berry consumers
-      # must reference ${VERDACCIO_TOKEN} from their committed .yarnrc.yml instead.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_VERDACCIO_TOKEN == 'true' }}
-        name: Generate .npmrc for the private Verdaccio registry
+      # ${VERDACCIO_TOKEN} / ${TAKUMI_GUARD_TOKEN} are written literally; npm/bun/yarn1 expand
+      # them from the environment at install time, so no plaintext token lands on disk. The file
+      # goes into the workspace, NOT ~/.npmrc: a persistent ~/.npmrc would crash npm/yarn1 in any
+      # other job on the same self-hosted runner that leaves the variables undefined. The managed
+      # lines are rewritten authoritatively so stale entries never win over the current tokens,
+      # and the file is hidden from git (a root-scoped exclude entry, or skip-worktree when the
+      # consumer tracks .npmrc) so commit-and-push workflows cannot commit it. Yarn Berry ignores
+      # .npmrc; Berry consumers must reference ${VERDACCIO_TOKEN} from their committed
+      # .yarnrc.yml instead (and Takumi Guard does not apply to Berry installs).
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_REGISTRY_TOKEN == 'true' }}
+        name: Generate .npmrc for the private Verdaccio registry and Takumi Guard
         run: |
           : # Recover state a crashed previous run may have left behind (the always() cleanup
           : # cannot run when the runner dies): clear a stale skip-worktree bit and restore the
@@ -295,12 +286,21 @@ jobs:
           fi
           NPMRC_TMP=$(mktemp "$RUNNER_TEMP/npmrc.XXXXXX")
           if [[ -e .npmrc ]]; then
-            grep -vE '^(@willbooster-private:registry|//verdaccio-production-e389\.up\.railway\.app/:_authToken)' .npmrc > "$NPMRC_TMP" || true
+            grep -vE '^(registry=|@willbooster-private:registry|//(verdaccio-production-e389\.up\.railway\.app|npm\.flatt\.tech)/:_authToken)' .npmrc > "$NPMRC_TMP" || true
             : # Some grep implementations do not add the final newline missing from the last line.
             if [[ -s "$NPMRC_TMP" && -n "$(tail -c1 "$NPMRC_TMP")" ]]; then echo >> "$NPMRC_TMP"; fi
           fi
-          echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/' >> "$NPMRC_TMP"
-          echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}' >> "$NPMRC_TMP"
+          if [[ "$HAS_TAKUMI_GUARD_TOKEN" == "true" ]]; then
+            : # Route default-registry installs through the Takumi Guard proxy, which blocks
+            : # known-malicious packages (https://flatt.tech/takumi/features/guard). Scoped
+            : # registries (e.g. @willbooster-private) deliberately keep their own registry.
+            echo 'registry=https://npm.flatt.tech/' >> "$NPMRC_TMP"
+            echo '//npm.flatt.tech/:_authToken=${TAKUMI_GUARD_TOKEN}' >> "$NPMRC_TMP"
+          fi
+          if [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+            echo '@willbooster-private:registry=https://verdaccio-production-e389.up.railway.app/' >> "$NPMRC_TMP"
+            echo '//verdaccio-production-e389.up.railway.app/:_authToken=${VERDACCIO_TOKEN}' >> "$NPMRC_TMP"
+          fi
           : # Replace .npmrc with mv instead of writing into it, so a consumer-committed symlink
           : # cannot redirect the managed lines into its target (e.g. a persistent home npmrc).
           rm -f .npmrc
@@ -319,12 +319,12 @@ jobs:
           fi
       # Yarn Berry loads `.yarnrc.yml` plugins during every yarn command, including the
       # credentialed install below, so a repository-committed plugin is config-driven code
-      # execution that can read the step-scoped VERDACCIO_TOKEN (#453). Strip the top-level
+      # execution that can read the step-scoped registry tokens (#453). Strip the top-level
       # `plugins:` block for the credentialed install only and restore the original file
       # right after it, so plugins still apply to the tokenless lifecycle replay. Residual
       # risk (out of scope here): the committed yarnPath release in .yarn/releases/ also
       # executes during the credentialed install.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_VERDACCIO_TOKEN == 'true' && steps.env-info.outputs.runner != 'bun' && steps.env-info.outputs.skip-scripts-option != '--ignore-scripts' }}
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_REGISTRY_TOKEN == 'true' && steps.env-info.outputs.runner != 'bun' && steps.env-info.outputs.skip-scripts-option != '--ignore-scripts' }}
         name: Remove plugins from .yarnrc.yml for the credentialed install
         run: |
           if [[ ! -f .yarnrc.yml ]]; then exit 0; fi
@@ -345,19 +345,20 @@ jobs:
           : # redirect the write (the .npmrc generation pattern).
           rm -f .yarnrc.yml
           mv "$YARNRC_TMP" .yarnrc.yml
-      # With a Verdaccio token, resolve and download with lifecycle scripts disabled so
-      # repository- or dependency-defined preinstall/postinstall can never read the step-scoped
-      # VERDACCIO_TOKEN (#449); the tokenless step below replays the skipped scripts.
+      # With a registry token (Verdaccio and/or Takumi Guard), resolve and download with
+      # lifecycle scripts disabled so repository- or dependency-defined preinstall/postinstall
+      # can never read the step-scoped tokens (#449); the tokenless step below replays the
+      # skipped scripts.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Install dependencies
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
-            if [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+            if [[ "$HAS_REGISTRY_TOKEN" == "true" ]]; then
               bun install --ignore-scripts
             else
               bun install
             fi
-          elif [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+          elif [[ "$HAS_REGISTRY_TOKEN" == "true" ]]; then
             : # No lifecycle scripts run here, so a single retry only covers transient network
             : # failures; a reproducible failure is a resolution, auth or lockfile error.
             ${{ steps.env-info.outputs.runner }} install --no-immutable ${{ steps.env-info.outputs.skip-scripts-option }} || \
@@ -373,6 +374,7 @@ jobs:
             }
           fi
         env:
+          TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # always(): the original .yarnrc.yml must come back even when the credentialed
       # install fails, both for the tokenless lifecycle replay below and so the sanitized
@@ -384,10 +386,11 @@ jobs:
           rm -f .yarnrc.yml
           mv "$YARNRC_BACKUP" .yarnrc.yml
       # Replay the lifecycle scripts the credentialed install skipped, in an environment without
-      # VERDACCIO_TOKEN (the job-level empty value keeps ${VERDACCIO_TOKEN} references in
-      # .npmrc/.yarnrc.yml expanding to '' instead of erroring). Every package is already in the
-      # package manager's cache from the step above, so the private registry is not contacted.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_VERDACCIO_TOKEN == 'true' }}
+      # the registry tokens (the job-level empty values keep ${VERDACCIO_TOKEN} and
+      # ${TAKUMI_GUARD_TOKEN} references in .npmrc/.yarnrc.yml expanding to '' instead of
+      # erroring). Every package is already in the package manager's cache from the step above,
+      # so the private registry is not contacted (and Takumi Guard serves anonymously anyway).
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_REGISTRY_TOKEN == 'true' }}
         name: Run dependency lifecycle scripts without registry credentials
         run: |
           if [[ "${{ steps.env-info.outputs.runner }}" == "bun" ]]; then
@@ -462,14 +465,26 @@ jobs:
           if [[ -n "$(git status --porcelain -- . "${excludes[@]}")" ]]; then
             git status
             git diff -- . "${excludes[@]}"
-            : # Push-back over the SSH origin (to re-trigger downstream workflows) is only wired up
-            : # by the self-hosted manual checkout; on hosted runners we fail so the diff is visible.
+            : # Push-back (to re-run checks against the fixed commit) only happens on
+            : # self-hosted runners; on hosted runners we fail so the diff is visible.
             : # RUNNER_ENVIRONMENT is exported to every step by the runner itself (it mirrors the
             : # runner.environment context, alongside RUNNER_OS/RUNNER_TEMP), so it needs no env: entry.
             if [[ "$RUNNER_ENVIRONMENT" == "self-hosted" ]]; then
               git add -A -- . "${excludes[@]}"
               git commit -m "fix: apply changes of autofix workflow" --no-verify
+              : # The push authenticates with the GITHUB_TOKEN credential persisted by
+              : # actions/checkout (no SSH deploy key).
               git push origin "HEAD:refs/heads/$HEAD_REF" --no-verify
+              : # A GITHUB_TOKEN push does not trigger workflows, so explicitly dispatch the
+              : # consumer's test workflow against the pushed commit
+              : # (https://toranoana-lab.hatenablog.com/entry/2025/08/20/100000). The consumer's
+              : # test.yml must declare a workflow_dispatch trigger; tolerate its absence.
+              curl --fail --show-error --silent -X POST \
+                -H "authorization: Bearer $GITHUB_TOKEN" \
+                -H "accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${{ github.repository }}/actions/workflows/test.yml/dispatches" \
+                -d "$(node -e 'console.log(JSON.stringify({ref: process.env.HEAD_REF}))')" || \
+                echo "::warning::Could not dispatch test.yml (missing workflow_dispatch trigger or actions:write permission); checks will not re-run on the pushed commit"
             else
               echo "Found changes during gen-code, cleanup, lint-fix and/or build"
               exit 1
@@ -479,6 +494,7 @@ jobs:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.head_ref || github.ref_name }}
       # Typecheck must be executed after `gen-code`
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
@@ -544,13 +560,38 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
-          # The dry run's npm invocations expand ${VERDACCIO_TOKEN} from the generated .npmrc.
+          # The dry run's npm invocations expand these tokens from the generated .npmrc.
+          TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         uses: actions/upload-artifact@v7.0.1
         with:
           name: test-artifact
           path: ${{ inputs.artifact_path }}
+
+      # A run started by the push-back's workflow_dispatch does not attach to pull-request
+      # checks, so surface its result as a commit status on the tested commit
+      # (https://toranoana-lab.hatenablog.com/entry/2025/08/20/100000). Requires the caller to
+      # grant statuses:write; tolerate its absence.
+      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && github.event_name == 'workflow_dispatch' }}
+        name: Report commit status for workflow_dispatch runs
+        run: |
+          STATE=failure
+          if [[ "$JOB_STATUS" == "success" ]]; then STATE=success; fi
+          curl --fail --show-error --silent -X POST \
+            -H "authorization: Bearer $GITHUB_TOKEN" \
+            -H "accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/$GITHUB_SHA" \
+            -d "$(STATE="$STATE" node -e 'console.log(JSON.stringify({
+              state: process.env.STATE,
+              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              context: `${process.env.GITHUB_WORKFLOW} / test (workflow_dispatch)`,
+              description: process.env.STATE,
+            }))')" || \
+            echo "::warning::Could not report the commit status (missing statuses:write permission)"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
       # defaults to .env, which some private repos commit.
@@ -562,7 +603,7 @@ jobs:
       # Revert the generate step: remove the file when this run created it, or restore the
       # committed content and clear the skip-worktree bit when the consumer tracks .npmrc; the
       # `.git` mutations otherwise outlive the job on persistent self-hosted workspaces.
-      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && env.HAS_VERDACCIO_TOKEN == 'true' }}
+      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && env.HAS_REGISTRY_TOKEN == 'true' }}
         name: Clean up the generated .npmrc
         run: |
           if git ls-files --error-unmatch -- .npmrc > /dev/null 2>&1; then
