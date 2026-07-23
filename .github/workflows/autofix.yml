@@ -291,10 +291,10 @@ jobs:
             : # consumer's test workflow against the pushed commit
             : # (https://toranoana-lab.hatenablog.com/entry/2025/08/20/100000). The consumer's
             : # test.yml must declare a workflow_dispatch trigger; tolerate its absence.
-            curl --fail --show-error --silent -X POST \
+            curl --fail --show-error --silent \
               -H "authorization: Bearer $GITHUB_TOKEN" \
               -H "accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/test.yml/dispatches" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/dispatches" \
               -d "$(node -e 'console.log(JSON.stringify({ref: process.env.HEAD_REF}))')" || \
               echo "::warning::Could not dispatch test.yml (missing workflow_dispatch trigger or actions:write permission); checks will not re-run on the pushed commit"
           fi

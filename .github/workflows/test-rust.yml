@@ -55,14 +55,12 @@ jobs:
     steps:
       # actions/checkout authenticates over HTTPS with GITHUB_TOKEN on both hosted and
       # self-hosted runners, so self-hosted runners need no SSH deploy key; self-hosted runners
-      # check out the head BRANCH instead of the default pull-request merge ref, matching the
-      # historical manual checkout behavior.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment != 'self-hosted' }}
-        uses: actions/checkout@v7.0.0
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment == 'self-hosted' }}
+      # check out the head BRANCH (instead of the default pull-request merge ref), matching the
+      # historical manual checkout behavior, while an empty ref keeps the default behavior.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ github.head_ref || github.ref_name }}
+          ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Set up rustup
         # Self-hosted runners may not have rustup; install it once into the persistent home directory.

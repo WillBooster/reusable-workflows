@@ -148,16 +148,13 @@ jobs:
         uses: WillBooster/reusable-workflows/.github/actions/clear-stale-skip-worktree@main
       # actions/checkout authenticates over HTTPS with GITHUB_TOKEN on both hosted and
       # self-hosted runners, so self-hosted runners need no SSH deploy key; its persisted
-      # credential also authenticates the push-back in the "Fix code" step below (and the
-      # post-job cleanup removes it from .git/config on persistent workspaces). Self-hosted
-      # runners check out the head BRANCH instead of the default pull-request merge ref so
-      # "Fix code" can commit and push onto it.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment != 'self-hosted' }}
-        uses: actions/checkout@v7.0.0
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.environment == 'self-hosted' }}
+      # credential also authenticates the push-back in the "Fix code" step below. Self-hosted
+      # runners check out the head BRANCH (instead of the default pull-request merge ref) so
+      # "Fix code" can commit and push onto it; an empty ref keeps the default behavior.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ github.head_ref || github.ref_name }}
+          ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
@@ -479,10 +476,10 @@ jobs:
               : # consumer's test workflow against the pushed commit
               : # (https://toranoana-lab.hatenablog.com/entry/2025/08/20/100000). The consumer's
               : # test.yml must declare a workflow_dispatch trigger; tolerate its absence.
-              curl --fail --show-error --silent -X POST \
+              curl --fail --show-error --silent \
                 -H "authorization: Bearer $GITHUB_TOKEN" \
                 -H "accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${{ github.repository }}/actions/workflows/test.yml/dispatches" \
+                "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/dispatches" \
                 -d "$(node -e 'console.log(JSON.stringify({ref: process.env.HEAD_REF}))')" || \
                 echo "::warning::Could not dispatch test.yml (missing workflow_dispatch trigger or actions:write permission); checks will not re-run on the pushed commit"
             else
@@ -578,10 +575,10 @@ jobs:
         run: |
           STATE=failure
           if [[ "$JOB_STATUS" == "success" ]]; then STATE=success; fi
-          curl --fail --show-error --silent -X POST \
+          curl --fail --show-error --silent \
             -H "authorization: Bearer $GITHUB_TOKEN" \
             -H "accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/statuses/$GITHUB_SHA" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -d "$(STATE="$STATE" node -e 'console.log(JSON.stringify({
               state: process.env.STATE,
               target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
