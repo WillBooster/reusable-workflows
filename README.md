@@ -18,6 +18,9 @@ Do NOT pass these secrets explicitly to the other workflows (e.g. `semantic-pr.y
 
 ## Re-testing autofix commits
 
-All git operations use the automatically provided `GITHUB_TOKEN` (self-hosted runners need no SSH deploy key, and callers configure nothing for this). Because a `GITHUB_TOKEN` push triggers no workflows, `test.yml` and `autofix.yml` dispatch the caller's `.github/workflows/test.yml` after pushing autofix commits: declare a `workflow_dispatch:` trigger in that caller workflow so the pushed commit gets re-tested (its result is reported as a commit status; without the trigger, the workflows only emit a warning).
+All git operations use the automatically provided `GITHUB_TOKEN` (self-hosted runners need no SSH deploy key; no secret needs to be passed). Because a `GITHUB_TOKEN` push triggers no workflows, `test.yml` and `autofix.yml` dispatch the caller's `.github/workflows/test.yml` after pushing autofix commits. Callers that want pushed commits re-tested must:
+
+- declare a `workflow_dispatch:` trigger in the caller `test.yml`, and
+- grant the caller job `contents: write` (push), `actions: write` (dispatch), and `statuses: write` (result reporting) — reusable workflows cannot elevate the caller's `GITHUB_TOKEN` permissions, and without them the push fails or the dispatch/status steps degrade to warnings.
 
 Note: this repository is mirrored to `WillBoosterLab/reusable-workflows` with `one-way-git-sync` via the `sync` script, which maintainers run from their machines (`bun run sync`; `renovate.json` and `node_modules` are excluded). The mirror is not synced automatically on merge, so it can lag `main` — run `bun run sync` after merging changes that WillBoosterLab callers need.

@@ -54,13 +54,11 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       # actions/checkout authenticates over HTTPS with GITHUB_TOKEN on both hosted and
-      # self-hosted runners, so self-hosted runners need no SSH deploy key; self-hosted runners
-      # check out the head BRANCH (instead of the default pull-request merge ref), matching the
-      # historical manual checkout behavior, while an empty ref keeps the default behavior.
+      # self-hosted runners, so self-hosted runners need no SSH deploy key. This workflow never
+      # pushes, so the default ref (the pull-request merge ref) is checked out everywhere —
+      # which also keeps fork pull requests working on self-hosted runners.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.0
-        with:
-          ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Set up rustup
         # Self-hosted runners may not have rustup; install it once into the persistent home directory.

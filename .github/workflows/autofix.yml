@@ -136,7 +136,17 @@ jobs:
           fi
           NPMRC_TMP=$(mktemp "$RUNNER_TEMP/npmrc.XXXXXX")
           if [[ -e .npmrc ]]; then
-            grep -vE '^(registry=|@willbooster-private:registry|//(verdaccio-production-e389\.up\.railway\.app|npm\.flatt\.tech)/:_authToken)' .npmrc > "$NPMRC_TMP" || true
+            : # Strip only the lines this run rewrites below (keyed on the present tokens), so a
+            : # committed custom registry= line or Verdaccio config survives runs without the
+            : # corresponding token ('$^' never matches, keeping every other line).
+            FILTER='$^'
+            if [[ "$HAS_TAKUMI_GUARD_TOKEN" == "true" ]]; then
+              FILTER="$FILTER|^registry=|^//npm\.flatt\.tech/:_authToken"
+            fi
+            if [[ "$HAS_VERDACCIO_TOKEN" == "true" ]]; then
+              FILTER="$FILTER|^@willbooster-private:registry|^//verdaccio-production-e389\.up\.railway\.app/:_authToken"
+            fi
+            grep -vE "$FILTER" .npmrc > "$NPMRC_TMP" || true
             : # Some grep implementations do not add the final newline missing from the last line.
             if [[ -s "$NPMRC_TMP" && -n "$(tail -c1 "$NPMRC_TMP")" ]]; then echo >> "$NPMRC_TMP"; fi
           fi
