@@ -402,10 +402,12 @@ jobs:
           TAKUMI_GUARD_TOKEN: ${{ (steps.env-info.outputs.runner == 'bun' || steps.env-info.outputs.skip-scripts-option == '--ignore-scripts') && secrets.TAKUMI_GUARD_TOKEN || '' }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
           # Yarn 1 delegates execution to a repository-controlled `yarn-path` binary BEFORE
-          # --ignore-scripts applies, so bypass it for this credentialed install. Empty means
-          # "honor yarn-path" (yarn1's boolifyWithDefault treats '' as unset): Berry repos need
-          # it — their committed yarnPath IS the Berry binary — and are tokenless here anyway.
-          YARN_IGNORE_PATH: ${{ steps.env-info.outputs.skip-scripts-option == '--ignore-scripts' && '1' || '' }}
+          # --ignore-scripts applies, so bypass it exactly when this install is credentialed
+          # (hardened) — a tokenless install has no secret to protect and keeps its pinned
+          # wrapper. Empty means "honor yarn-path" (yarn1's boolifyWithDefault treats '' as
+          # unset); Berry repos always keep their committed yarnPath — it IS the Berry binary —
+          # and are tokenless here anyway.
+          YARN_IGNORE_PATH: ${{ (steps.env-info.outputs.hardened-install == 'true' && steps.env-info.outputs.skip-scripts-option == '--ignore-scripts') && '1' || '' }}
       # always(): the original .yarnrc.yml must come back even when the credentialed
       # install fails, both for the tokenless lifecycle replay below and so the sanitized
       # file can never be committed by later steps or outlive the job on persistent
