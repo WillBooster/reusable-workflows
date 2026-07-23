@@ -123,7 +123,9 @@ jobs:
       # and the file is hidden from git (a root-scoped exclude entry, or skip-worktree when the
       # consumer tracks .npmrc) so commit-and-push workflows cannot commit it. Yarn Berry ignores
       # .npmrc; Berry consumers must reference ${VERDACCIO_TOKEN} from their committed
-      # .yarnrc.yml instead (and Takumi Guard does not apply to Berry installs).
+      # .yarnrc.yml instead (and Takumi Guard does not apply to Berry installs). Guard covers
+      # newly RESOLVED public packages: package managers may download already-locked packages
+      # from the resolved URL recorded in the lockfile (Yarn 1 always does), bypassing the proxy.
       - if: ${{ env.HAS_REGISTRY_TOKEN == 'true' }}
         name: Generate .npmrc for the private Verdaccio registry and Takumi Guard
         run: |
@@ -234,7 +236,10 @@ jobs:
             }
           fi
         env:
-          TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
+          # Only bun/yarn1 read the Guard lines from .npmrc; Yarn Berry ignores .npmrc, so the
+          # token would give its repo-controlled yarnPath executable a secret with zero
+          # installation function — Berry installs get the defined-but-empty job-level value.
+          TAKUMI_GUARD_TOKEN: ${{ (steps.env-info.outputs.runner == 'bun' || steps.env-info.outputs.skip-scripts-option == '--ignore-scripts') && secrets.TAKUMI_GUARD_TOKEN || '' }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # always(): the original .yarnrc.yml must come back even when the credentialed
       # install fails, both for the tokenless lifecycle replay below and so the sanitized
