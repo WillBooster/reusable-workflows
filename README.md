@@ -16,6 +16,10 @@ The five install-capable workflows (`test.yml`, `deploy.yml`, `release.yml`, `ru
 
 Do NOT pass these secrets explicitly to the other workflows (e.g. `semantic-pr.yml`, `close-comment.yml`): GitHub rejects a `secrets:` map entry the callee does not declare (`secrets: inherit` is exempt from this validation). Running `wbfy` (>= 3.0.0) on the caller repository injects `VERDACCIO_TOKEN`/`FNOX_AGE_KEY` automatically.
 
+`wbfy.yml` applies wbfy to the calling repository itself on a schedule and force-pushes the result to its `wbfy` branch (wbfy generates the caller workflow; repositories where wbfy does not work are excluded by wbfy's deny list). Besides `VERDACCIO_TOKEN` it declares:
+
+- `GH_BOT_PAT`: PAT with `contents: write` and workflow scope. Required in practice: wbfy regenerates files under `.github/workflows/`, which a `GITHUB_TOKEN` push cannot touch, and a PAT push also triggers the test workflows on the `wbfy` branch. Register it as an organization secret (WillBooster) or per-repository secret (WillBoosterLab).
+
 ## Re-testing autofix commits
 
 Source checkouts and the autofix push-back use the automatically provided `GITHUB_TOKEN` (no secret needs to be passed, and self-hosted runners need no SSH deploy key for them). Exception: `sync.yml` pushes to the caller-supplied `DEST_GIT_URL` secret, so an SSH-form value there still needs runner SSH credentials until it is migrated to an HTTPS token URL. Because a `GITHUB_TOKEN` push triggers no workflows, `test.yml` and `autofix.yml` dispatch the caller's `.github/workflows/test.yml` after pushing autofix commits. Callers that want pushed commits re-tested must:
