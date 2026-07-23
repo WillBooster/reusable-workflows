@@ -450,6 +450,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+          # Takumi Guard is an install proxy, not a publish registry. publishConfig.registry
+          # still takes precedence for packages intentionally published elsewhere.
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
           # The release script's npm invocations expand these tokens from the generated .npmrc.
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
