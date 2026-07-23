@@ -53,10 +53,17 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
+      # Fork pull-request code must never execute on persistent self-hosted runners: Cargo
+      # build scripts and tests would run attacker-controlled code with a persistent workspace.
+      # Route fork PRs onto ephemeral runners via github_hosted_runner/runs_on instead.
+      - if: ${{ runner.environment == 'self-hosted' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        name: Reject fork pull requests on self-hosted runners
+        run: |
+          echo '::error::Fork pull requests are not supported on persistent self-hosted runners.'
+          exit 1
       # actions/checkout authenticates over HTTPS with GITHUB_TOKEN on both hosted and
       # self-hosted runners, so self-hosted runners need no SSH deploy key. This workflow never
-      # pushes, so the default ref (the pull-request merge ref) is checked out everywhere —
-      # which also keeps fork pull requests working on self-hosted runners.
+      # pushes, so the default ref (the pull-request merge ref) is checked out everywhere.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.0
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
