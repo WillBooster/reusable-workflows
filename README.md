@@ -16,9 +16,9 @@ The five install-capable workflows (`test.yml`, `deploy.yml`, `release.yml`, `ru
 
 Do NOT pass these secrets explicitly to the other workflows (e.g. `semantic-pr.yml`, `close-comment.yml`): GitHub rejects a `secrets:` map entry the callee does not declare (`secrets: inherit` is exempt from this validation). Running `wbfy` (>= 3.0.0) on the caller repository injects `VERDACCIO_TOKEN`/`FNOX_AGE_KEY` automatically.
 
-`wbfy.yml` applies wbfy to the calling repository itself on a schedule and force-pushes the result to its `wbfy` branch (wbfy generates the caller workflow; repositories where wbfy does not work are excluded by wbfy's deny list). Besides `VERDACCIO_TOKEN` it declares:
+`wbfy.yml` applies wbfy to the calling repository itself on a schedule and force-pushes the result to its `wbfy` branch (wbfy generates the caller workflow; repositories where wbfy does not work are excluded by wbfy's deny list). It runs two jobs: the wbfy job executes dependency code and therefore only holds the read-only job token, handing its result to the push job as a patch artifact; the push job runs only trusted code and is the sole holder of the PAT. Besides `VERDACCIO_TOKEN` it declares:
 
-- `GH_BOT_PAT`: PAT with `contents: write` and workflow scope. Required in practice: wbfy regenerates files under `.github/workflows/`, which a `GITHUB_TOKEN` push cannot touch, and a PAT push also triggers the test workflows on the `wbfy` branch. Register it as an organization secret (WillBooster) or per-repository secret (WillBoosterLab).
+- `WBFY_GH_TOKEN`: PAT with `contents: write` and workflow scope, required for the push: wbfy regenerates files under `.github/workflows/`, which a `GITHUB_TOKEN` push cannot touch (the push is atomic, so such a push would deliver nothing), and a PAT push also triggers the test workflows on the `wbfy` branch. Register it as an organization secret (WillBooster) or let `wbfy --env` provision it per repository (WillBoosterLab). The name is deliberately NOT the historical `GH_BOT_PAT`, which released wbfy versions delete as a deprecated secret during `wbfy --env`.
 
 ## Re-testing autofix commits
 
