@@ -100,7 +100,7 @@ jobs:
       # wbfy itself runs `bun add` / `bun install`, so Bun must exist even in a repository that
       # does not pin it yet (e.g. a first wbfy run on an unmigrated repository).
       - if: ${{ !steps.check-ver.outputs.exist-bun-version }}
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
       - if: ${{ steps.check-ver.outputs.exist-any-version && runner.environment == 'self-hosted' }}
