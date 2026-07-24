@@ -220,11 +220,15 @@ jobs:
   push:
     needs: wbfy
     if: ${{ needs.wbfy.outputs.has-changes }}
-    runs-on: ${{ (inputs.runs_on && fromJSON(inputs.runs_on)) || (((github.event_name != 'schedule' && !github.event.repository.private) || inputs.github_hosted_runner) && 'ubuntu-latest') || (inputs.cpu_arch && fromJSON(format('["self-hosted", "{0}", "{1}"]', inputs.ci_label, inputs.cpu_arch))) || fromJSON(format('["self-hosted", "{0}"]', inputs.ci_label)) }}
+    # ALWAYS a GitHub-hosted (ephemeral) runner, never the self-hosted pool: on a persistent
+    # self-hosted machine the wbfy job's dependency code can poison MACHINE state that survives
+    # job boundaries (e.g. a global git core.fsmonitor hook would execute during this job's `git
+    # add` with the PAT in the environment), so the environment reset alone is not isolation.
+    # The job runs for seconds and only when there are changes, so the hosted-runner cost for
+    # private repositories is negligible.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Clear stale skip-worktree bits left by a crashed previous run
-        uses: WillBooster/reusable-workflows/.github/actions/clear-stale-skip-worktree@main
       # The exact commit the patch was generated against, so the default branch advancing between
       # the two jobs cannot make the patch fail to apply.
       - uses: actions/checkout@v7.0.0
