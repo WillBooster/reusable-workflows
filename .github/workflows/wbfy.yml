@@ -83,7 +83,7 @@ jobs:
       # while a manual workflow_dispatch may target any branch — without the pin, dispatching from
       # a feature branch would carry all of that branch's commits into the force-pushed `wbfy`
       # branch, which the downstream wbfy-merge process could then propose for main.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.event.repository.default_branch }}
@@ -110,7 +110,7 @@ jobs:
           chmod 700 "$GNUPGHOME"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
-        uses: jdx/mise-action@v4.2.1
+        uses: jdx/mise-action@v4.2.3
         with:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
       # wbfy requires Node >= 24 (its `engines` constraint; it uses ES2024 APIs such as
@@ -231,7 +231,7 @@ jobs:
     steps:
       # The exact commit the patch was generated against, so the default branch advancing between
       # the two jobs cannot make the patch fail to apply.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
           ref: ${{ needs.wbfy.outputs.base-sha }}
