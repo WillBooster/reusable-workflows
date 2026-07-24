@@ -65,7 +65,7 @@ jobs:
       # self-hosted runners, so self-hosted runners need no SSH deploy key. This workflow never
       # pushes, so the default ref (the pull-request merge ref) is checked out everywhere.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7.0.1
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Set up rustup
         # Self-hosted runners may not have rustup; install it once into the persistent home directory.

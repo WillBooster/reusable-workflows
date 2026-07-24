@@ -92,7 +92,7 @@ jobs:
     steps:
       - name: Clear stale skip-worktree bits left by a crashed previous run
         uses: WillBooster/reusable-workflows/.github/actions/clear-stale-skip-worktree@main
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
@@ -123,7 +123,7 @@ jobs:
           chmod 700 "$GNUPGHOME"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
-        uses: jdx/mise-action@v4.2.1
+        uses: jdx/mise-action@v4.2.3
         with:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
       - name: Ensure fnox secrets are resolvable
