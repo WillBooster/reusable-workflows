@@ -532,10 +532,28 @@ jobs:
           elif grep -q '"build":' package.json; then
             ${{ steps.env-info.outputs.runner }} run build
           fi
-          : # Exclude the dotenv file when the DOT_ENV secret overwrote it: a secret written
-          : # over a tracked file must never be committed and pushed by this autofix. Also
-          : # unstage it in case a caller-defined script staged it (git add -A in ci-setup etc.),
-          : # since the pathspec exclusion below cannot remove an existing index entry.
+        env:
+          # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+          HUSKY: 0
+          LEFTHOOK: 0
+      # Hand the fixers' output to the separate apply workflow instead of committing from here.
+      # This job just installed and executed the pull request's own dependencies, so it must hold
+      # no write credential; autofix-apply.yml performs the privileged commit in a job that runs
+      # no repository code. The dotenv file is excluded because a secret written over a tracked
+      # file must never be committed.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event_name == 'pull_request' }}
+        id: autofix-patch
+        uses: WillBooster/reusable-workflows/.github/actions/upload-autofix-patch@main
+        with:
+          exclude_paths: ${{ env.HAS_DOT_ENV == 'true' && inputs.dot_env_path || '' }}
+          expected_head_sha: ${{ github.event.pull_request.head.sha }}
+      # Always red when the fixers changed something, on every runner and event: the apply
+      # workflow turns the pull request green by pushing the fix, and a run with no apply workflow
+      # (a push to a branch, or a caller that has not adopted it yet) still surfaces the diff.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Report code fixed by the previous steps
+        run: |
           excludes=()
           if [[ "$HAS_DOT_ENV" == "true" ]]; then
             excludes=(":(exclude)$DOT_ENV_PATH")
@@ -543,38 +561,12 @@ jobs:
           fi
           if [[ -n "$(git status --porcelain -- . "${excludes[@]}")" ]]; then
             git status
-            git diff -- . "${excludes[@]}"
-            : # Push-back (to re-run checks against the fixed commit) only happens on
-            : # self-hosted runners; on hosted runners we fail so the diff is visible.
-            : # RUNNER_ENVIRONMENT is exported to every step by the runner itself (it mirrors the
-            : # runner.environment context, alongside RUNNER_OS/RUNNER_TEMP), so it needs no env: entry.
-            if [[ "$RUNNER_ENVIRONMENT" == "self-hosted" ]]; then
-              git add -A -- . "${excludes[@]}"
-              git commit -m "fix: apply changes of autofix workflow" --no-verify
-              : # The push authenticates with the GITHUB_TOKEN credential persisted by
-              : # actions/checkout (no SSH deploy key).
-              git push origin "HEAD:refs/heads/$HEAD_REF" --no-verify
-              : # A GITHUB_TOKEN push does not trigger workflows, so explicitly dispatch the
-              : # consumer's test workflow against the pushed commit
-              : # (https://toranoana-lab.hatenablog.com/entry/2025/08/20/100000). The consumer's
-              : # test.yml must declare a workflow_dispatch trigger; tolerate its absence.
-              curl --fail --show-error --silent \
-                -H "authorization: Bearer $GITHUB_TOKEN" \
-                -H "accept: application/vnd.github+json" \
-                "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/dispatches" \
-                -d "$(node -e 'console.log(JSON.stringify({ref: process.env.HEAD_REF}))')" || \
-                echo "::warning::Could not dispatch test.yml (missing workflow_dispatch trigger or actions:write permission); checks will not re-run on the pushed commit"
-            else
-              echo "Found changes during gen-code, cleanup, lint-fix and/or build"
-              exit 1
-            fi
+            git diff HEAD -- . "${excludes[@]}"
+            echo '::error::Found changes during gen-code, cleanup, lint-fix and/or build.'
+            exit 1
           fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
-          # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
-          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
-          GITHUB_TOKEN: ${{ github.token }}
-          HEAD_REF: ${{ github.head_ref || github.ref_name }}
       # Typecheck must be executed after `gen-code`
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "typecheck" npm script if exists
