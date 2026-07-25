@@ -11,9 +11,13 @@ import { readFile, stat } from 'node:fs/promises';
 // as well as the review burden of a single autofix commit.
 const MaxTotalBytes = 25 * 1024 * 1024;
 const MaxFileCount = 2000;
-// Ceiling on the raw artifact, enforced before parsing. Generous enough for MaxTotalBytes of
-// base64 (4/3 expansion) plus JSON structure.
-const MaxPatchFileBytes = 40 * 1024 * 1024;
+const MaxPathBytes = 4096;
+// Ceiling on the raw artifact, enforced before parsing. It has to exceed the largest patch the
+// other limits still ACCEPT, or a legitimate autofix would be produced and then rejected here:
+// MaxTotalBytes as base64 is 34,952,536 bytes, and MaxFileCount paths of MaxPathBytes each add up
+// to ~16 MB once JSON escaping is budgeted at 2x. 64 MiB clears that worst case with room to
+// spare while still bounding a hostile artifact.
+const MaxPatchFileBytes = 64 * 1024 * 1024;
 // A first segment this script refuses to touch: a patch that rewrites workflows or actions would
 // execute with this App's privileges on the next run, escalating a formatting bot into arbitrary
 // org-wide write. The producing action rejects these too; this is the enforcing copy.
@@ -43,6 +47,9 @@ function fail(message) {
  */
 function validatePath(candidate) {
   if (typeof candidate !== 'string' || candidate.length === 0) return 'is not a non-empty string';
+  // Bounded so the worst-case serialized patch stays inside MaxPatchFileBytes; also well past any
+  // path a real filesystem accepts.
+  if (Buffer.byteLength(candidate) > MaxPathBytes) return `exceeds ${MaxPathBytes} bytes`;
   if (ControlCharacterPattern.test(candidate)) return 'contains control characters';
   if (candidate.startsWith('/')) return 'is absolute';
   if (candidate.includes('\\')) return 'contains a backslash';

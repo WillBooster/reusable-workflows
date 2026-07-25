@@ -18,6 +18,11 @@ import path from 'node:path';
 // Refuse instead — a visibly unsupported change beats a subtly corrupted commit.
 const RegularFileMode = '100644';
 const DeletedMode = '000000';
+// The applier enforces the same envelope on the untrusted artifact it receives. Checking it here
+// too is what keeps the two consistent: without it a large-but-legitimate autofix would upload
+// fine and then be rejected in a different workflow run, where nobody is looking at the diff.
+const MaxFileCount = 2000;
+const MaxTotalBytes = 25 * 1024 * 1024;
 
 const {
   EXCLUDE_PATHS: excludePaths = '',
@@ -132,13 +137,31 @@ if (unsupported.length > 0) {
   process.exit(0);
 }
 
+if (entries.length > MaxFileCount) {
+  console.log(
+    `::warning::No autofix patch was produced: ${entries.length} changed files exceeds the ${MaxFileCount} the apply workflow accepts.`
+  );
+  setOutput('has_patch', 'false');
+  process.exit(0);
+}
+
 const additions = [];
 const deletions = [];
+let totalBytes = 0;
 for (const entry of entries) {
   if (entry.destinationMode === DeletedMode) {
     deletions.push({ path: entry.path });
   } else {
-    additions.push({ path: entry.path, contents: git(['cat-file', 'blob', entry.destinationBlob], 'buffer').toString('base64') });
+    const contents = git(['cat-file', 'blob', entry.destinationBlob], 'buffer');
+    totalBytes += contents.length;
+    if (totalBytes > MaxTotalBytes) {
+      console.log(
+        `::warning::No autofix patch was produced: the changed files exceed the ${MaxTotalBytes} bytes the apply workflow accepts.`
+      );
+      setOutput('has_patch', 'false');
+      process.exit(0);
+    }
+    additions.push({ path: entry.path, contents: contents.toString('base64') });
   }
 }
 
