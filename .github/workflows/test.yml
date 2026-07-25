@@ -496,12 +496,16 @@ jobs:
       # URLs at all — with an empty `resolved`, bun derives the download URL from the configured
       # registry, so metadata AND tarballs still go through the proxy. Normalize them away so the
       # committed lockfile stays registry-agnostic; genuine dependency changes survive untouched.
+      # The match is anchored to `", ` so it only clears a registry entry's `resolved` slot. A
+      # DIRECT tarball dependency carries the same host in two other places that must survive: the
+      # workspace descriptor (`"pkg": "https://…"`, preceded by `": `) and its package tuple's
+      # first element (`"pkg@https://…"`), whose entry has no `resolved` slot at all.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_TAKUMI_GUARD_TOKEN == 'true' }}
         name: Keep the Takumi Guard proxy out of the committed lockfile
         run: |
           if [[ ! -f bun.lock ]]; then exit 0; fi
           NORMALIZED=$(mktemp "$RUNNER_TEMP/bun-lock.XXXXXX")
-          sed -E 's#"https://npm\.flatt\.tech/[^"]*"#""#g' bun.lock > "$NORMALIZED"
+          sed -E 's#(", )"https://npm\.flatt\.tech/[^"]*"#\1""#g' bun.lock > "$NORMALIZED"
           if cmp -s bun.lock "$NORMALIZED"; then
             rm -f "$NORMALIZED"
           else
