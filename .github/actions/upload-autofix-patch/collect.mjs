@@ -66,8 +66,21 @@ git(['add', '--all', '--', ...pathspecs]);
 
 // --raw exposes the index-side mode and blob id, which the mode check and the content read below
 // both need. -z keeps paths verbatim: git otherwise quotes unusual names, and any line-based
-// parsing would corrupt a path holding a newline or a trailing space.
-const raw = git(['-c', 'core.quotepath=false', 'diff', '--staged', '--raw', '-z', '--no-renames', '--', ...pathspecs]);
+// parsing would corrupt a path holding a newline or a trailing space. --no-abbrev because --raw
+// otherwise emits a short OID whose length is only a probabilistic uniqueness estimate, so
+// `git cat-file blob` below would fail with "short object ID is ambiguous" in a large repository.
+const raw = git([
+  '-c',
+  'core.quotepath=false',
+  'diff',
+  '--staged',
+  '--raw',
+  '-z',
+  '--no-renames',
+  '--no-abbrev',
+  '--',
+  ...pathspecs,
+]);
 const fields = raw.split('\0');
 const entries = [];
 for (let index = 0; index + 1 < fields.length; index += 2) {
