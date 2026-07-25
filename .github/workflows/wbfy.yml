@@ -246,12 +246,15 @@ jobs:
       actions: write
     steps:
       # The exact commit the patch was generated against, so the default branch advancing between
-      # the two jobs cannot make the patch fail to apply.
-      - uses: actions/checkout@v7.0.0
+      # the two jobs cannot make the patch fail to apply. Both actions of this job are pinned to
+      # full commit SHAs (not the mutable release tags used elsewhere): this job's token carries
+      # contents/actions write, so a moved or compromised tag would execute replacement code with
+      # push access.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ needs.wbfy.outputs.base-sha }}
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: wbfy-patch
           path: ${{ runner.temp }}/wbfy-patch
@@ -271,7 +274,14 @@ jobs:
               echo "::warning::wbfy also changed files under .github/workflows/, which GITHUB_TOKEN cannot push; they were skipped. Run wbfy locally or provide the opt-in WBFY_GH_TOKEN secret to update them: $(git status --porcelain -- .github/workflows | tr '\n' ' ')"
             fi
             if git diff --cached --quiet; then
-              echo 'Only workflow files changed; nothing is pushed.'
+              : # Do not leave a STALE wbfy branch behind: a previous run's generated commit
+              : # would stay eligible for downstream wbfy-merge even though the latest run found
+              : # nothing pushable. Resetting the ref to the checked-out base commit uploads no
+              : # new objects, so the GITHUB_TOKEN workflow-file restriction does not apply.
+              AUTH=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
+              git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" \
+                push origin HEAD:refs/heads/wbfy --force --no-verify
+              echo 'Only workflow files changed; the wbfy branch was reset to the base commit.'
               exit 0
             fi
             PUSH_TOKEN="$GITHUB_TOKEN"
@@ -287,14 +297,19 @@ jobs:
           if [[ "$PUSH_TOKEN" == "$GITHUB_TOKEN" ]]; then
             : # A GITHUB_TOKEN push triggers no workflows, so explicitly dispatch the caller's
             : # test workflow on the pushed branch (the approach test.yml uses for its autofix
-            : # push-back). The caller's test.yml must declare a workflow_dispatch trigger;
-            : # tolerate its absence.
+            : # push-back). This requires workflow_dispatch in the DEFAULT-branch test.yml (wbfy
+            : # generates it, but that generated update is itself a workflow-file change this
+            : # token cannot push) — a warning, not a failure, on purpose: the degradation is
+            : # that downstream wbfy-merge opens a PR instead of direct-merging (its CI check
+            : # finds no run), and failing here would instead turn every not-yet-migrated
+            : # repository's nightly red until its test.yml is updated via a local wbfy run or
+            : # the opt-in PAT.
             curl --fail --show-error --silent \
               -H "authorization: Bearer $GITHUB_TOKEN" \
               -H "accept: application/vnd.github+json" \
               "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/dispatches" \
               -d '{"ref":"wbfy"}' || \
-              echo "::warning::Could not dispatch test.yml (missing workflow_dispatch trigger or actions:write permission); checks will not run on the pushed wbfy branch"
+              echo "::warning::Could not dispatch test.yml; checks will not run on the pushed wbfy branch. The default-branch test.yml needs a workflow_dispatch trigger (run wbfy locally or provide the opt-in WBFY_GH_TOKEN secret so wbfy can update it), and this job needs actions:write."
           fi
         env:
           GITHUB_TOKEN: ${{ github.token }}
