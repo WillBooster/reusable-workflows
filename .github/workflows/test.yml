@@ -143,6 +143,11 @@ jobs:
       VERDACCIO_TOKEN: ''
       WB_ENV: ${{ inputs.environment || 'test' }}
     strategy:
+      # Required by the single-leg autofix upload below: the reporting step fails on EVERY leg
+      # whenever the fixers changed something, so with the default fail-fast a faster sibling leg
+      # would cancel leg 0 before it uploaded the patch, losing the fix at random. Only multi-leg
+      # matrices are affected at all, which is exactly the case this protects.
+      fail-fast: false
       matrix:
         # c.f. https://github.community/t/reusable-workflow-with-strategy-matrix/205676
         node-version: ${{ fromJson(needs.detect-node-version-matrix.outputs.json || '[""]') }}

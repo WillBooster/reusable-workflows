@@ -26,8 +26,8 @@ const {
   GITHUB_OUTPUT: githubOutput,
 } = process.env;
 
-function git(args, encoding = 'utf8') {
-  return execFileSync('git', args, { encoding, maxBuffer: 512 * 1024 * 1024 });
+function git(args, encoding = 'utf8', stdio = undefined) {
+  return execFileSync('git', args, { encoding, maxBuffer: 512 * 1024 * 1024, stdio });
 }
 
 function setOutput(key, value) {
@@ -55,9 +55,12 @@ const excluded = excludePaths
   .filter(Boolean);
 const pathspecs = ['.', ...excluded.map((file) => `:(exclude)${file}`)];
 for (const file of excluded) {
-  // Drop anything a consumer script staged before this action ran.
+  // Drop anything a consumer script staged before this action ran. stderr is discarded because
+  // the common case — an untracked dotenv — makes git print a fatal-looking "pathspec ... did not
+  // match any file(s)" line that this catch already handles, and a spurious `error:` is worst
+  // exactly here, in the step responsible for keeping a secret out of the patch.
   try {
-    git(['restore', '--staged', '--', file]);
+    git(['restore', '--staged', '--', file], 'utf8', ['ignore', 'pipe', 'ignore']);
   } catch {
     // Not staged, or not tracked at all; nothing to unstage.
   }
@@ -86,8 +89,8 @@ const entries = [];
 for (let index = 0; index + 1 < fields.length; index += 2) {
   const metadata = fields[index];
   if (!metadata.startsWith(':')) continue;
-  const [, destinationMode, , destinationBlob, status] = metadata.slice(1).split(' ');
-  entries.push({ destinationMode, destinationBlob, status, path: fields[index + 1] });
+  const [sourceMode, destinationMode, , destinationBlob, status] = metadata.slice(1).split(' ');
+  entries.push({ sourceMode, destinationMode, destinationBlob, status, path: fields[index + 1] });
 }
 
 if (entries.length === 0) {
@@ -112,12 +115,18 @@ if (forbidden.length > 0) {
 // Declining is a WARNING rather than an error: the reporting step still fails the job with the
 // diff, which is exactly the behaviour callers had before autofix could push at all. Failing hard
 // here would instead tell the author to "apply manually" for a change autofix simply cannot carry.
+// A CHANGED mode is caught too, even when the destination is a plain 100644: clearing an
+// executable bit leaves the blob identical, so the patch would be a byte-for-byte no-op that
+// drops the fix. Worse, the next run reproduces the same diff on top of the App's own commit and
+// trips the apply job's non-convergence guard with a misleading "fixers are not idempotent".
 const unsupported = entries.filter(
-  ({ destinationMode }) => destinationMode !== RegularFileMode && destinationMode !== DeletedMode
+  ({ sourceMode, destinationMode }) =>
+    (destinationMode !== RegularFileMode && destinationMode !== DeletedMode) ||
+    (sourceMode !== DeletedMode && destinationMode !== DeletedMode && sourceMode !== destinationMode)
 );
 if (unsupported.length > 0) {
   console.log(
-    `::warning::No autofix patch was produced: ${unsupported.map((entry) => `${entry.path} (mode ${entry.destinationMode})`).join(', ')} is not a plain file, and the commit API expresses file contents only, so executable bits, symlinks and submodules cannot be carried.`
+    `::warning::No autofix patch was produced: ${unsupported.map((entry) => `${entry.path} (mode ${entry.sourceMode} -> ${entry.destinationMode})`).join(', ')} is not a plain-file content change, and the commit API expresses file contents only, so file modes, symlinks and submodules cannot be carried.`
   );
   setOutput('has_patch', 'false');
   process.exit(0);
