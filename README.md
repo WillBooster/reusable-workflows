@@ -22,11 +22,32 @@ Migration prerequisite for the no-PAT path: the caller's default-branch `test.ym
 
 (The declared `WBFY_GH_TOKEN` secret is retired and ignored; the declaration remains only until every generated caller stops passing it, because GitHub rejects callers passing undeclared secrets.)
 
-## Re-testing autofix commits
+## Applying autofix commits
 
-Source checkouts and the autofix push-back use the automatically provided `GITHUB_TOKEN` (no secret needs to be passed, and self-hosted runners need no SSH deploy key for them). Exception: `sync.yml` pushes to the caller-supplied `DEST_GIT_URL` secret, so an SSH-form value there still needs runner SSH credentials until it is migrated to an HTTPS token URL. Because a `GITHUB_TOKEN` push triggers no workflows, `test.yml` and `autofix.yml` dispatch the caller's `.github/workflows/test.yml` after pushing autofix commits. Callers that want pushed commits re-tested must:
+`test.yml` no longer pushes the fixes itself. Its test job runs the pull request's own dependencies, so it holds no write credential at all (its checkout uses `persist-credentials: false`); instead it uploads the fixers' output as an `autofix-patch` artifact and fails with the diff. A separate caller workflow, triggered by `workflow_run`, commits that patch as a GitHub App:
 
-- declare a `workflow_dispatch:` trigger in the caller `test.yml`, and
-- grant the caller job `contents: write` (push), `actions: write` (dispatch), and `statuses: write` (result reporting) — reusable workflows cannot elevate the caller's `GITHUB_TOKEN` permissions, and without them the push fails or the dispatch/status steps degrade to warnings.
+```yaml
+name: Apply autofix
+on:
+  workflow_run:
+    workflows: [Test]
+    types: [completed]
+jobs:
+  apply:
+    uses: WillBooster/reusable-workflows/.github/workflows/autofix-apply.yml@main
+    secrets:
+      AUTOFIX_APP_PRIVATE_KEY: ${{ secrets.AUTOFIX_APP_PRIVATE_KEY }}
+```
+
+- Only `AUTOFIX_APP_PRIVATE_KEY` is a secret. The App ID is a public identifier and ships as the `autofix_app_id` input's default; override it only when an organization runs its own App.
+- An App push re-triggers `pull_request` **and** `pull_request_target`, so every required check — including `pull_request_target` ones such as `semantic-pr` — populates on the fixed commit. This is why the old `workflow_dispatch` workaround is gone.
+- Without this caller workflow the test job simply fails with the diff, which is the fail-closed fallback.
+- Fork pull requests are excluded: `workflow_run` carries the base repository's secrets, and the App cannot push to a fork's branch.
+- Only self-hosted runs currently produce a patch. Hosted runs check out the pull-request merge ref, where the fixed contents would not correspond to the head commit, so the collector declines with a warning.
+- The collector refuses changes under `.github/**` and any change that is not a plain file (executable bits, symlinks and submodules), because the commit API expresses file contents only.
+
+`autofix.yml` (public repositories) and `wbfy.yml` keep their own mechanisms: they push with `GITHUB_TOKEN` and, because such a push triggers no workflows, dispatch the caller's `.github/workflows/test.yml` afterwards. Callers of those two still need a `workflow_dispatch:` trigger in `test.yml` plus `contents: write`, `actions: write` and `statuses: write`; without them the push fails or the dispatch/status steps degrade to warnings.
+
+Source checkouts use the automatically provided `GITHUB_TOKEN` (no secret needs to be passed, and self-hosted runners need no SSH deploy key). Exception: `sync.yml` pushes to the caller-supplied `DEST_GIT_URL` secret, so an SSH-form value there still needs runner SSH credentials until it is migrated to an HTTPS token URL.
 
 Note: this repository is mirrored to `WillBoosterLab/reusable-workflows` with `one-way-git-sync` via the `sync` script, which maintainers run from their machines (`bun run sync`; `renovate.json` and `node_modules` are excluded). The mirror is not synced automatically on merge, so it can lag `main` — run `bun run sync` after merging changes that WillBoosterLab callers need.
