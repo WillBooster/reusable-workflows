@@ -171,6 +171,10 @@ jobs:
       # lifecycle script can read it. Nothing here pushes any more — autofix-apply.yml performs
       # the commit from a separate job — so the credential has no remaining use. (Same reasoning,
       # and the same setting, as the privileged split in wbfy.yml.)
+      # This removes the PUSH credential only. The caller-supplied GH_TOKEN is still handed,
+      # step-scoped, to the steps that run the consumer's test and release-test scripts, so code
+      # those scripts invoke can still read it; narrowing that is a separate change to the caller
+      # contract, not something this workflow can do on its own.
       # Self-hosted runners check out the head BRANCH instead of the default pull-request merge
       # ref, so the tree matches github.event.pull_request.head.sha and the collected patch
       # corresponds to the commit it will be applied onto; fork PRs never reach this on
@@ -558,9 +562,12 @@ jobs:
       # Always red when the fixers changed something, on every runner and event: the apply
       # workflow turns the pull request green by pushing the fix, and a run with no apply workflow
       # (a push to a branch, or a caller that has not adopted it yet) still surfaces the diff.
-      # !cancelled() rather than a plain success condition so a failing collector (it refuses
-      # .github/** changes and unsupported file modes) still gets its diff printed here.
-      - if: ${{ !cancelled() && needs.pre.outputs.should_skip != 'true' }}
+      # The collector's own failure (it refuses .github/** changes) is added explicitly rather
+      # than using a bare !cancelled(): any status-check function drops the implicit success(),
+      # which would also run this step after an unrelated failure — an aborted install that left
+      # a rewritten lockfile behind would then report a nonexistent formatting problem on top of
+      # the real error.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && (success() || steps.autofix-patch.outcome == 'failure') }}
         name: Report code fixed by the previous steps
         run: |
           excludes=()

@@ -30,7 +30,7 @@ runs:
         EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
       run: node "$GITHUB_ACTION_PATH/collect.mjs"
     - if: ${{ steps.collect.outputs.has_patch == 'true' }}
-      uses: actions/upload-artifact@v4.6.2
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: autofix-patch
         path: ${{ steps.collect.outputs.patch_directory }}/autofix.json

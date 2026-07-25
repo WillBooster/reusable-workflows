@@ -15,15 +15,6 @@ on:
       target_organization:
         required: false
         type: string
-      autofix_app_id:
-        # Not a secret: App IDs are served publicly (an unauthenticated GET /apps/{slug} returns
-        # it) and are useless without the private key. Declaring it as one would cost an extra
-        # manual organization-secret registration, mask the value in logs, and force every caller
-        # to pass it. Override only when an organization runs its own Autofixer App.
-        description: App ID of the GitHub App whose installation commits the fixes.
-        required: false
-        type: string
-        default: '4388928'
     secrets:
       AUTOFIX_APP_PRIVATE_KEY:
         description: Private key of that App. Never exposed to any step that runs repository code.
@@ -72,7 +63,11 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
-          app-id: ${{ inputs.autofix_app_id }}
+          # Constant, not an input or a secret: one Autofixer App serves every organization, and
+          # an App ID is public anyway (an unauthenticated GET /apps/{slug} returns it) and useless
+          # without the private key. Keeping it out of the inputs leaves callers with nothing to
+          # configure but the key itself.
+          app-id: '4388928'
           private-key: ${{ secrets.AUTOFIX_APP_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write

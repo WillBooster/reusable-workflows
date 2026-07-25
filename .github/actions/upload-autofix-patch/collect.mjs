@@ -86,21 +86,28 @@ if (entries.length === 0) {
 // visible, instead of surfacing as an opaque rejection in a separate workflow run.
 const forbidden = entries.filter(({ path: file }) => file === '.github' || file.startsWith('.github/') || file.startsWith('.git/'));
 if (forbidden.length > 0) {
+  // The caller's reporting step runs even after this failure and prints the diff, so it is not
+  // repeated here.
   console.log(`::error::Autofix must not modify ${forbidden.map((entry) => entry.path).join(', ')}; refusing to produce a patch.`);
-  // Printed here because this step's failure skips the reporting step that normally shows the
-  // diff, and a rejection the author cannot see is not actionable.
-  execFileSync('git', ['--no-pager', 'diff', '--staged', '--', ...forbidden.map((entry) => entry.path)], { stdio: 'inherit' });
   process.exit(1);
 }
 
+// Note --raw reports the DESTINATION mode for content-only edits too, so this also catches a
+// plain reformat of a file that was already executable. That is intended: whether the commit API
+// preserves an existing path's mode when a FileAddition replaces only its contents is
+// undocumented, so committing such a change could silently drop the executable bit.
+// Declining is a WARNING rather than an error: the reporting step still fails the job with the
+// diff, which is exactly the behaviour callers had before autofix could push at all. Failing hard
+// here would instead tell the author to "apply manually" for a change autofix simply cannot carry.
 const unsupported = entries.filter(
   ({ destinationMode }) => destinationMode !== RegularFileMode && destinationMode !== DeletedMode
 );
 if (unsupported.length > 0) {
   console.log(
-    `::error::Autofix cannot commit ${unsupported.map((entry) => `${entry.path} (mode ${entry.destinationMode})`).join(', ')}: the commit API expresses file contents only, so executable bits, symlinks and submodules would be lost. Apply these changes manually.`
+    `::warning::No autofix patch was produced: ${unsupported.map((entry) => `${entry.path} (mode ${entry.destinationMode})`).join(', ')} is not a plain file, and the commit API expresses file contents only, so executable bits, symlinks and submodules cannot be carried.`
   );
-  process.exit(1);
+  setOutput('has_patch', 'false');
+  process.exit(0);
 }
 
 const additions = [];

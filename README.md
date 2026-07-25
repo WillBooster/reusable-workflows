@@ -24,7 +24,7 @@ Migration prerequisite for the no-PAT path: the caller's default-branch `test.ym
 
 ## Applying autofix commits
 
-`test.yml` no longer pushes the fixes itself. Its test job runs the pull request's own dependencies, so it holds no write credential at all (its checkout uses `persist-credentials: false`); instead it uploads the fixers' output as an `autofix-patch` artifact and fails with the diff. A separate caller workflow, triggered by `workflow_run`, commits that patch as a GitHub App:
+`test.yml` no longer pushes the fixes itself. Its test job runs the pull request's own dependencies, so its checkout no longer persists a push credential (`persist-credentials: false`); instead it uploads the fixers' output as an `autofix-patch` artifact and fails with the diff. A separate caller workflow, triggered by `workflow_run`, commits that patch as a GitHub App:
 
 ```yaml
 name: Apply autofix
@@ -44,7 +44,10 @@ jobs:
 - Without this caller workflow the test job simply fails with the diff, which is the fail-closed fallback.
 - Fork pull requests are excluded: `workflow_run` carries the base repository's secrets, and the App cannot push to a fork's branch.
 - Only self-hosted runs currently produce a patch. Hosted runs check out the pull-request merge ref, where the fixed contents would not correspond to the head commit, so the collector declines with a warning.
-- The collector refuses changes under `.github/**` and any change that is not a plain file (executable bits, symlinks and submodules), because the commit API expresses file contents only.
+- The collector refuses changes under `.github/**`, and produces no patch (a warning, so the job still fails with the diff) when any changed entry is not a plain `100644` file, because the commit API expresses file contents only. Note this also covers a content-only edit to an already-executable file: `git diff --raw` reports its destination mode as `100755`, and whether the commit API preserves an existing path's mode is undocumented.
+- This removes the *push* credential from the test job, not every credential: the caller's `GH_TOKEN` is still provided, step-scoped, to the steps that run the consumer's `test`/`release-test` scripts. Narrowing that is a separate change to the caller contract.
+
+Callers no longer need `contents: write` or `actions: write` for autofix, since `test.yml` neither pushes nor dispatches any more; `statuses: write` is still used by the aggregate status job. Those grants are removed from generated callers by wbfy.
 
 `autofix.yml` (public repositories) and `wbfy.yml` keep their own mechanisms: they push with `GITHUB_TOKEN` and, because such a push triggers no workflows, dispatch the caller's `.github/workflows/test.yml` afterwards. Callers of those two still need a `workflow_dispatch:` trigger in `test.yml` plus `contents: write`, `actions: write` and `statuses: write`; without them the push fails or the dispatch/status steps degrade to warnings.
 

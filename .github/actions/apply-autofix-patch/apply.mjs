@@ -5,12 +5,15 @@
 // — every path is validated here, and the commit target (repository, branch, expected head) comes
 // from the workflow_run event rather than from the patch. Getting that backwards would turn this
 // into a "commit anything anywhere" primitive for any compromised dependency.
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
 // createCommitOnBranch sends the whole patch in one GraphQL request, so the cap bounds the request
 // as well as the review burden of a single autofix commit.
 const MaxTotalBytes = 25 * 1024 * 1024;
 const MaxFileCount = 2000;
+// Ceiling on the raw artifact, enforced before parsing. Generous enough for MaxTotalBytes of
+// base64 (4/3 expansion) plus JSON structure.
+const MaxPatchFileBytes = 40 * 1024 * 1024;
 // A first segment this script refuses to touch: a patch that rewrites workflows or actions would
 // execute with this App's privileges on the next run, escalating a formatting bot into arbitrary
 // org-wide write. The producing action rejects these too; this is the enforcing copy.
@@ -51,6 +54,13 @@ function validatePath(candidate) {
   return undefined;
 }
 
+// Bound the file before reading it: every later cap is computed from DECODED bytes, so a patch
+// padded with megabytes of base64 filler (which decodes to nothing) would otherwise exhaust
+// memory in readFile/JSON.parse before any validation runs. Base64 costs ~4/3, plus JSON overhead.
+const { size: patchFileBytes } = await stat(patchFile);
+if (patchFileBytes > MaxPatchFileBytes) {
+  fail(`Patch file is ${patchFileBytes} bytes, exceeding the ${MaxPatchFileBytes} limit.`);
+}
 const patch = JSON.parse(await readFile(patchFile, 'utf8'));
 if (patch.version !== 1) fail(`Unsupported patch version: ${JSON.stringify(patch.version)}`);
 // The patch is bound to the commit it was computed from. Applying it onto a different head would
@@ -76,20 +86,22 @@ for (const addition of additions) {
   if (reason) fail(`Rejected addition path ${JSON.stringify(addition?.path)}: it ${reason}.`);
   if (typeof addition.contents !== 'string') fail(`Addition ${addition.path} has non-string contents.`);
   // Buffer.from silently DROPS invalid base64 characters rather than throwing, so the round trip
-  // is what actually rejects a malformed payload; decoding is also the only honest way to measure
-  // the real size, since padding tricks let the encoded length understate it.
+  // is what actually rejects a malformed payload. The comparison is EXACT: normalizing away
+  // trailing '=' on both sides would accept arbitrarily long runs of padding ("====" decodes to
+  // zero bytes), letting a hostile patch inflate the artifact without moving the byte counter.
+  // The producer emits Node's canonical padded base64, so exact equality rejects nothing valid.
   const decoded = Buffer.from(addition.contents, 'base64');
-  if (decoded.toString('base64').replace(/=+$/, '') !== addition.contents.replace(/=+$/, '')) {
+  if (decoded.toString('base64') !== addition.contents) {
     fail(`Addition ${addition.path} is not canonical base64.`);
   }
   totalBytes += decoded.length;
+  // Checked inside the loop so an oversized patch stops here instead of after decoding all of it.
+  if (totalBytes > MaxTotalBytes) fail(`Patch decodes to more than the ${MaxTotalBytes} byte limit.`);
 }
 for (const deletion of deletions) {
   const reason = validatePath(deletion?.path);
   if (reason) fail(`Rejected deletion path ${JSON.stringify(deletion?.path)}: it ${reason}.`);
 }
-if (totalBytes > MaxTotalBytes) fail(`Patch decodes to ${totalBytes} bytes, exceeding the ${MaxTotalBytes} limit.`);
-
 console.log(`Applying ${additions.length} addition(s) and ${deletions.length} deletion(s) to ${repository}@${branch}.`);
 
 const response = await fetch('https://api.github.com/graphql', {
