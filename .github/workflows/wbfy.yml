@@ -289,11 +289,19 @@ jobs:
             : # empirically); deletion also auto-closes a stale wbfy PR. The existence check
             : # keeps the common absent-branch case green while a real deletion failure fails
             : # the job instead of silently leaving the stale branch merge-eligible.
-            if authed_git ls-remote --exit-code origin refs/heads/wbfy > /dev/null; then
+            ls_status=0
+            authed_git ls-remote --exit-code origin refs/heads/wbfy > /dev/null || ls_status=$?
+            if [[ "$ls_status" -eq 0 ]]; then
               authed_git push origin --delete wbfy --no-verify
               echo 'Only workflow files changed; nothing is pushed and the stale wbfy branch was deleted.'
-            else
+            elif [[ "$ls_status" -eq 2 ]]; then
+              : # ls-remote reserves status 2 for "no matching refs"; any other status is a
+              : # transport/auth failure that must fail the job — succeeding would leave a
+              : # possibly existing stale branch merge-eligible.
               echo 'Only workflow files changed; nothing is pushed.'
+            else
+              echo "::error::Could not determine whether a stale wbfy branch exists (git ls-remote exited $ls_status)."
+              exit "$ls_status"
             fi
             exit 0
           fi
