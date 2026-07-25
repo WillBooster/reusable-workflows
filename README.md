@@ -62,4 +62,9 @@ The `test.yml` caller's permissions are unchanged. `test.yml` no longer pushes o
 
 Source checkouts use the automatically provided `GITHUB_TOKEN` (no secret needs to be passed, and self-hosted runners need no SSH deploy key). Exception: `sync.yml` pushes to the caller-supplied `DEST_GIT_URL` secret, so an SSH-form value there still needs runner SSH credentials until it is migrated to an HTTPS token URL.
 
-Note: this repository is mirrored to `WillBoosterLab/reusable-workflows` with `one-way-git-sync` via the `sync` script, which maintainers run from their machines (`bun run sync`; `renovate.json` and `node_modules` are excluded). The mirror is not synced automatically on merge, so it can lag `main` — run `bun run sync` after merging changes that WillBoosterLab callers need.
+Note: this repository is mirrored to `WillBoosterLab/reusable-workflows` with `one-way-git-sync` via the `sync` script, which maintainers run from their machines (`bun run sync`; `renovate.jsonc` and `node_modules` are excluded). The mirror is not synced automatically on merge, so it can lag `main` — run `bun run sync` after merging changes that WillBoosterLab callers need. The script passes `-b main` explicitly rather than relying on inference, and the pinned `one-way-git-sync` must stay at >= 6.0.45: earlier versions turned a transient clone failure into a push to a branch literally named `undefined` while still reporting success (and, with `-b`, into `fatal: a branch named 'main' already exists`). Verify the result by the mirror's own sync commit rather than the exit code — its title embeds the source commit it mirrored, so it should name the local `main` HEAD:
+
+```bash
+git rev-parse main
+gh api repos/WillBoosterLab/reusable-workflows/commits/main --jq '.commit.message | split("\n")[0]'
+```
