@@ -276,12 +276,15 @@ jobs:
             if git diff --cached --quiet; then
               : # Do not leave a STALE wbfy branch behind: a previous run's generated commit
               : # would stay eligible for downstream wbfy-merge even though the latest run found
-              : # nothing pushable. Resetting the ref to the checked-out base commit uploads no
-              : # new objects, so the GITHUB_TOKEN workflow-file restriction does not apply.
+              : # nothing pushable. DELETION is used because GITHUB_TOKEN rejects any wbfy-branch
+              : # ref UPDATE whose old-to-new diff touches workflow files — even a force reset to
+              : # an existing base commit — while deleting the branch is allowed (both verified
+              : # empirically); deletion also auto-closes a stale wbfy PR. Absence of the branch
+              : # is the common case and not an error.
               AUTH=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
               git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" \
-                push origin HEAD:refs/heads/wbfy --force --no-verify
-              echo 'Only workflow files changed; the wbfy branch was reset to the base commit.'
+                push origin --delete wbfy --no-verify 2> /dev/null || true
+              echo 'Only workflow files changed; nothing is pushed and any stale wbfy branch was deleted.'
               exit 0
             fi
             PUSH_TOKEN="$GITHUB_TOKEN"
