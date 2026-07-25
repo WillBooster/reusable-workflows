@@ -485,6 +485,35 @@ jobs:
         env:
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+      # When an install has to UPDATE bun.lock while the generated .npmrc points the default
+      # registry at Takumi Guard, bun rewrites the `resolved` URL of every ALREADY-LOCKED package
+      # to https://npm.flatt.tech/… (newly added packages correctly keep ""). The autofix step
+      # below would then commit those URLs, pinning a shared lockfile to one environment's mirror:
+      # a cold-cache `bun install` afterwards downloads from the proxy on every machine, and fails
+      # outright with 401 for anyone whose npmrc carries a registry.npmjs.org token, because bun
+      # attaches the DEFAULT registry's credentials to the lockfile URL regardless of its host and
+      # Guard rejects every bearer that is not its own. Guard coverage does not depend on these
+      # URLs at all — with an empty `resolved`, bun derives the download URL from the configured
+      # registry, so metadata AND tarballs still go through the proxy. Normalize them away so the
+      # committed lockfile stays registry-agnostic; genuine dependency changes survive untouched.
+      # The match is anchored to `", ` so it only clears a registry entry's `resolved` slot. A
+      # DIRECT tarball dependency carries the same host in two other places that must survive: the
+      # workspace descriptor (`"pkg": "https://…"`, preceded by `": `) and its package tuple's
+      # first element (`"pkg@https://…"`), whose entry has no `resolved` slot at all.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_TAKUMI_GUARD_TOKEN == 'true' }}
+        name: Keep the Takumi Guard proxy out of the committed lockfile
+        run: |
+          if [[ ! -f bun.lock ]]; then exit 0; fi
+          NORMALIZED=$(mktemp "$RUNNER_TEMP/bun-lock.XXXXXX")
+          sed -E 's#(", )"https://npm\.flatt\.tech/[^"]*"#\1""#g' bun.lock > "$NORMALIZED"
+          if cmp -s bun.lock "$NORMALIZED"; then
+            rm -f "$NORMALIZED"
+          else
+            : # Replace with mv rather than writing into the file, matching the .npmrc pattern.
+            rm -f bun.lock
+            mv "$NORMALIZED" bun.lock
+            echo "Rewrote Takumi Guard proxy URLs in bun.lock back to the registry-agnostic form."
+          fi
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Fix code
         run: |
