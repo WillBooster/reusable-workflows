@@ -20,6 +20,12 @@ on:
         default: .env
         required: false
         type: string
+      deploy_max_attempts:
+        # Attempts for the deploy step. By default only deploys that pass a platform secret
+        # (FLY_API_TOKEN / RAILWAY_API_TOKEN / GCP_SA_KEY_JSON) are retried; set this when the
+        # credentials come from elsewhere, such as fnox, so a flaky upload is still retried.
+        required: false
+        type: number
       environment:
         required: true
         type: string
@@ -554,7 +560,7 @@ jobs:
         uses: nick-fields/retry@dd56f1ca8ca991e2385c18ab6dd36ea7f9fdb55f
         with:
           timeout_minutes: 60
-          max_attempts: ${{ (env.HAS_FLY_API_TOKEN == 'true' || env.HAS_RAILWAY_API_TOKEN == 'true' || env.HAS_GCP_SA_KEY_JSON == 'true') && 20 || 1 }}
+          max_attempts: ${{ inputs.deploy_max_attempts || ((env.HAS_FLY_API_TOKEN == 'true' || env.HAS_RAILWAY_API_TOKEN == 'true' || env.HAS_GCP_SA_KEY_JSON == 'true') && 20 || 1) }}
           command: |
             : # The retry action runs this via `bash -c` without -e, so without this a failing
             : # deploy/ci-setup or cd would fall through and deploy anyway, reporting success.
