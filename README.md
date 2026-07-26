@@ -34,17 +34,17 @@ on:
     types: [completed]
 jobs:
   apply:
-    # A called workflow can only REDUCE the caller's token, never elevate it, so the grant has to
-    # be here: without actions:read the job cannot list or download the triggering run's artifact.
+    # A called workflow can only REDUCE the caller's token, never elevate it, so the grants have
+    # to be here: without actions:read the job cannot list or download the triggering run's
+    # artifact, and without id-token:write it cannot mint the OIDC token the broker exchange needs.
     permissions:
       actions: read
       contents: read
+      id-token: write
     uses: WillBooster/reusable-workflows/.github/workflows/autofix-apply.yml@main
-    secrets:
-      AUTOFIX_APP_PRIVATE_KEY: ${{ secrets.AUTOFIX_APP_PRIVATE_KEY }}
 ```
 
-- `AUTOFIX_APP_PRIVATE_KEY` is the only thing a caller configures. The App ID is a constant inside `autofix-apply.yml` — it is a public identifier, useless without the key, and one Autofixer App serves every organization, so there is no input to override. An organization wanting its own App needs a change to that workflow.
+- Callers configure no secret at all. The App's private key lives only in the [WillBooster token broker](https://github.com/WillBooster/github-token-broker) (a Cloudflare Worker on a dedicated account, never in GitHub Secrets); `autofix-apply.yml` exchanges its OIDC ID token for a one-hour installation token scoped to the calling repository with `contents: write` only. The broker's policy pins `job_workflow_ref` to this repository's main-branch `autofix-apply.yml`, so no other workflow can obtain a token. If the broker is down, the exchange fails and the patch is simply not committed (the test run already failed with the diff) — fail-closed.
 - An App push re-triggers `pull_request` **and** `pull_request_target`, so every required check — including `pull_request_target` ones such as `semantic-pr` — populates on the fixed commit. This is why the old `workflow_dispatch` workaround is gone.
 - Without this caller workflow the test job simply fails with the diff, which is the fail-closed fallback.
 - Fork pull requests are excluded: `workflow_run` carries the base repository's secrets, and the App cannot push to a fork's branch.
