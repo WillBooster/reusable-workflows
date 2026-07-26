@@ -9,22 +9,26 @@ name: Apply autofix
 # workflow_run gives us exactly that separation: this job runs in the BASE repository's context,
 # from the DEFAULT branch's workflow definition, and executes no repository code — it only moves
 # a validated JSON patch into a commit.
+#
+# Credentials: the App's private key lives ONLY in the WillBooster token broker (a Cloudflare
+# Worker on a dedicated account) — never in GitHub Secrets. This job exchanges its OIDC ID token
+# for a short-lived installation token scoped to this one repository with contents:write; the
+# broker's policy pins the token's job_workflow_ref to this workflow's main-branch definition, so
+# no other workflow can obtain one. Callers configure nothing but `permissions: id-token: write`.
 on:
   workflow_call:
     inputs:
       target_organization:
         required: false
         type: string
-    secrets:
-      AUTOFIX_APP_PRIVATE_KEY:
-        description: Private key of that App. Never exposed to any step that runs repository code.
-        required: true
 
 permissions:
-  # Reading the triggering run's artifact. Note this is the workflow's OWN GITHUB_TOKEN; the
-  # commit itself uses the App token, because GITHUB_TOKEN pushes would not re-trigger checks.
+  # actions/contents: reading the triggering run's artifact with the workflow's OWN GITHUB_TOKEN;
+  # id-token: minting the OIDC ID token the broker exchange requires. The commit itself uses the
+  # broker-issued App token, because GITHUB_TOKEN pushes would not re-trigger checks.
   actions: read
   contents: read
+  id-token: write
 
 jobs:
   apply:
@@ -56,21 +60,16 @@ jobs:
             echo 'found=false' >> "$GITHUB_OUTPUT"
           fi
 
-      # Scoped deliberately narrower than the installation: one repository, and only the single
-      # permission the commit needs. An installation covering every repository in the organization
-      # therefore still yields a token that can write to exactly this one.
+      # The broker derives the token's target repository from the verified `repository` claim of
+      # the ID token and issues contents:write only, so an installation covering every repository
+      # in the organization still yields a token that can write to exactly this one. Same-repo
+      # `@main` reference, like apply-autofix-patch below: reusable-workflow jobs do not check out
+      # this repository, and the trust boundary stays within it.
       - if: ${{ steps.artifact.outputs.found == 'true' }}
         id: app-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        uses: WillBooster/reusable-workflows/.github/actions/broker-token@main
         with:
-          # Constant, not an input or a secret: one Autofixer App serves every organization, and
-          # an App ID is public anyway (an unauthenticated GET /apps/{slug} returns it) and useless
-          # without the private key. Keeping it out of the inputs leaves callers with nothing to
-          # configure but the key itself.
-          app-id: '4388928'
-          private-key: ${{ secrets.AUTOFIX_APP_PRIVATE_KEY }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
+          identity: autofix
 
       # A patch on top of a commit this App already made means the fixers did not converge: the
       # apply would push, re-trigger the tests, and produce another patch indefinitely. The old
@@ -78,13 +77,15 @@ jobs:
       # replaces a property we are deliberately giving up. Fail loudly rather than burn runners.
       # Matching the App's own bot login is exact: it identifies THIS App rather than any bot, and
       # it does not depend on `.author.type` (App bot authors do report `Bot` there — verified
-      # against renovate[bot] — but the login comparison needs no such assumption).
+      # against renovate[bot] — but the login comparison needs no such assumption). The slug is a
+      # hardcoded constant (public information) because the broker exchange, unlike the retired
+      # create-github-app-token step, has no app-slug output.
       - if: ${{ steps.artifact.outputs.found == 'true' }}
         name: Refuse to loop on non-convergent fixers
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          APP_SLUG: willbooster-autofixer
         run: |
           AUTHOR="$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA" --jq '.author.login // ""')"
           if [[ "$AUTHOR" == "$APP_SLUG[bot]" ]]; then
