@@ -110,3 +110,14 @@ jobs:
           # Derived from the event, never from the patch, so the patch cannot redirect the write.
           branch: ${{ github.event.workflow_run.head_branch }}
           expected_head_oid: ${{ github.event.workflow_run.head_sha }}
+
+      # The retired create-github-app-token action revoked its token in a post step; a composite
+      # action has no post phase, so the revocation lives here instead. always(): the token must
+      # die even when the loop guard or the apply step failed, not only on success. Best-effort:
+      # a revocation hiccup must not turn a successful autofix commit into a failed job, and an
+      # unrevoked token still expires within the hour.
+      - if: ${{ always() && steps.app-token.outputs.token != '' }}
+        name: Revoke the installation token
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh api -X DELETE /installation/token || echo '::warning::Token revocation failed; the token expires on its own within an hour.'
