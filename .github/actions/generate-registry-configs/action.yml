@@ -26,8 +26,10 @@ inputs:
       through the Takumi Guard proxy; scoped registries (e.g. @willbooster-private) deliberately
       keep their own registry. Guard covers newly RESOLVED public packages: package managers may
       download already-locked packages from the resolved URL recorded in the lockfile (Yarn 1
-      always does), bypassing the proxy. The proxy also serves anonymously, so tokenless steps
-      that expand the reference to '' still install.
+      always does), bypassing the proxy. The proxy also serves anonymously for .npmrc consumers
+      (npm/bun/yarn1 send no auth for an empty token); Yarn Berry, whose generated entry sets
+      npmAlwaysAuth, instead aborts registry requests when the token is empty (YN0033), so
+      tokenless Berry steps must be served by yarn.lock and the cache.
     default: 'false'
   has-verdaccio-token:
     description: >-
@@ -98,10 +100,12 @@ runs:
           : # the filter targets honest configs carrying a compromised third-party plugin.
           awk '/^(plugins|npmRegistryServer|npmRegistries|npmScopes):/ { skip = 1; next } skip && /^[^[:space:]#]/ { skip = 0 } !skip' .yarnrc.yml > "$YARNRC_TMP"
         fi
-        : # ${VAR-} expands to '' when the variable is unset, so yarn commands in steps without
-        : # the secrets keep working. npmAlwaysAuth: Berry only attaches the token to
-        : # metadata/tarball GETs when asked to; with an empty token it still requests
-        : # anonymously instead of failing, so the tokenless lifecycle replay keeps working.
+        : # ${VAR-} expands to '' when the variable is unset, so Berry can always parse the
+        : # config. npmAlwaysAuth: Berry only attaches the token to metadata/tarball GETs when
+        : # asked to. With an empty token Berry ABORTS registry requests locally (YN0033)
+        : # instead of falling back to anonymous — a deliberate fail-closed default: tokenless
+        : # steps (e.g. the lifecycle replay) work because resolution is already lockfile- and
+        : # cache-complete, and consumer scripts must rely on the installed graph anyway.
         if [[ "$HAS_TAKUMI_GUARD_TOKEN" == 'true' ]]; then
           {
             echo 'npmRegistryServer: "https://npm.flatt.tech/"'
