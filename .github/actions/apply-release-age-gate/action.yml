@@ -8,7 +8,8 @@ description: >-
   (self-host-utils) and developer machines (wbfy), so every environment ends up with byte-identical
   settings. Project-level configuration takes precedence in all three managers, so wbfied
   repositories keep their own (identical) gate and exclusion list. Known gaps: Yarn 1 supports no
-  gate at all, and npm is not probed — the npm bundled with the caller's Node ignores the gate
+  gate at all yet is exempt (Yarn 2 through 4.10.2 fail the job instead, since they must be upgraded
+  rather than kept), and npm is not probed — the npm bundled with the caller's Node ignores the gate
   entirely below 11.10 and only the exclusion list below 11.17.
 runs:
   using: composite
@@ -25,8 +26,8 @@ runs:
         # to on a runner whose repository does not use Yarn Berry at all.
         YARN_VERSION="$(yarn --version 2> /dev/null || echo 1.0.0)"
         if [[ "$YARN_VERSION" != 1.* ]] && \
-           [[ "$(printf '%s\n' 4.10.2 "$YARN_VERSION" | sort -V | head -n 1)" != '4.10.2' ]]; then
-          echo "::error::Yarn $YARN_VERSION cannot enforce npmMinimalAgeGate (requires Yarn >= 4.10.2), so installs would run without the organization's release-age gate; upgrade Yarn."
+           [[ "$(printf '%s\n' 4.10.3 "$YARN_VERSION" | sort -V | head -n 1)" != '4.10.3' ]]; then
+          echo "::error::Yarn $YARN_VERSION cannot enforce npmMinimalAgeGate reliably (requires Yarn >= 4.10.3), so installs would run without the organization's release-age gate or resolve a prerelease in its place; upgrade Yarn."
           exit 1
         fi
         if command -v bun > /dev/null; then
@@ -56,4 +57,6 @@ runs:
             -H 'accept: application/vnd.github.raw+json' \
             -o "$file" "$CONFIGS_API_URL/$file"
         done
-        bash applyReleaseAgeGate.sh
+        # The token is for the fetch only: the downloaded script never reads it, and it comes from
+        # another repository's main.
+        env -u GITHUB_TOKEN bash applyReleaseAgeGate.sh
