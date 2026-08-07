@@ -41,7 +41,7 @@ runs:
     - name: Apply the minimum-release-age policy to global package-manager configs
       shell: bash
       env:
-        CONFIGS_API_URL: https://api.github.com/repos/WillBooster/shared/contents/packages/wbfy/configs
+        SHARED_API_URL: https://api.github.com/repos/WillBooster/shared
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         # Self-hosted runners are provisioned by self-host-utils with the same content from the same
@@ -50,12 +50,14 @@ runs:
         if [[ "${RUNNER_ENVIRONMENT:-}" != 'github-hosted' ]]; then exit 0; fi
         cd "$(mktemp -d)"
         # The authenticated Contents API instead of anonymous raw.githubusercontent.com, whose
-        # per-IP limit rate-limits runners with 429s; retry so a blip cannot fail the job.
+        # per-IP limit rate-limits runners with 429s; retry so a blip cannot fail the job. The
+        # commit is resolved once so the script and the policy it reads always come from the same
+        # revision, which a coordinated update of the two needs.
+        fetch() { curl --fail --show-error --silent --retry 5 --retry-all-errors --retry-delay 2 -H "authorization: Bearer ${GITHUB_TOKEN}" "$@"; }
+        SHARED_SHA="$(fetch -H 'accept: application/vnd.github.sha' "$SHARED_API_URL/commits/main")"
         for file in applyReleaseAgeGate.sh releaseAgeGate.json; do
-          curl --fail --show-error --silent --retry 5 --retry-all-errors --retry-delay 2 \
-            -H "authorization: Bearer ${GITHUB_TOKEN}" \
-            -H 'accept: application/vnd.github.raw+json' \
-            -o "$file" "$CONFIGS_API_URL/$file"
+          fetch -H 'accept: application/vnd.github.raw+json' \
+            -o "$file" "$SHARED_API_URL/contents/packages/wbfy/configs/$file?ref=$SHARED_SHA"
         done
         # The token is for the fetch only: the downloaded script never reads it, and it comes from
         # another repository's main.
