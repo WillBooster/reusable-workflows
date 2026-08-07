@@ -120,27 +120,21 @@ runs:
         fi
 
         # ~/.yarnrc.yml — npmMinimalAgeGate exists only in Yarn >= 4.10, and older Yarn Berry
-        # versions REJECT unknown settings, so the block is written only when the repository's own
-        # yarn is new enough — and actively removed otherwise, so on a persistent self-hosted
-        # runner a block written for one repository cannot break the next repository's older yarn.
-        # Minutes as a plain number: Yarn's duration parser silently ignores day suffixes
-        # (yarnpkg/berry#6899), which would disable the gate entirely.
+        # versions REJECT unknown settings, so this block DELIBERATELY breaks their installs:
+        # running an old Yarn (without the age gate it cannot enforce) is not acceptable, and the
+        # hard failure forces the repository to upgrade to Yarn >= 4.10. Yarn 1 ignores
+        # .yarnrc.yml entirely and stays on the ~/.npmrc gate above. Minutes as a plain number:
+        # Yarn's duration parser silently ignores day suffixes (yarnpkg/berry#6899), which would
+        # disable the gate entirely.
         YARNRC_PATH="$HOME/.yarnrc.yml"
-        YARN_VERSION=''
-        if command -v yarn > /dev/null; then
-          YARN_VERSION="$(yarn --version 2> /dev/null || true)"
-        fi
         rest="$(strip_managed_block "$YARNRC_PATH")"
         if grep -qE '^[ \t]*(npmMinimalAgeGate|npmPreapprovedPackages)[ \t]*:' <<< "$rest"; then
           echo "::warning::Skipped updating $YARNRC_PATH: it sets npmMinimalAgeGate or npmPreapprovedPackages outside the managed release-age-gate block."
-        elif [[ -n "$YARN_VERSION" && "$YARN_VERSION" != 1.* ]] && \
-             [[ "$(printf '%s\n' 4.10.0 "$YARN_VERSION" | sort -V | head -n 1)" == '4.10.0' ]]; then
+        else
           YARNRC_BLOCK="$START_MARKER
         npmMinimalAgeGate: $YARN_MINUTES # 7 days
         npmPreapprovedPackages:
         $(printf "  - '%s'\n" "${EXCLUDES[@]}")
         $END_MARKER"
           write_managed "$YARNRC_PATH" "$rest" "$YARNRC_BLOCK"
-        elif [[ -f "$YARNRC_PATH" ]]; then
-          write_managed "$YARNRC_PATH" "$rest" ''
         fi
