@@ -126,13 +126,21 @@ runs:
         # Yarn 1 is exempt: the calling workflows still support Yarn 1 repositories even though it
         # cannot enforce any age gate (it ignores .yarnrc.yml, and npm's min-release-age does not
         # apply to its resolution) — a known policy gap, not an oversight.
+        # No fallback in the probes below: when the workflow installs with the checked manager, a
+        # failed version probe must fail the job rather than silently skip the enforcement.
         if [[ "$RUNNER" == 'yarn' ]]; then
-          # No fallback: when the workflow installs with Yarn, a failed version probe must fail
-          # the job rather than silently skip the enforcement.
           YARN_VERSION="$(yarn --version)"
           if [[ "$YARN_VERSION" != 1.* ]] && \
              [[ "$(printf '%s\n' 4.10.0 "$YARN_VERSION" | sort -V | head -n 1)" != '4.10.0' ]]; then
             echo "::error::Yarn $YARN_VERSION cannot enforce npmMinimalAgeGate (requires Yarn >= 4.10), so installs would run without the organization's release-age gate; upgrade Yarn to >= 4.10."
+            exit 1
+          fi
+        elif [[ "$RUNNER" == 'bun' ]]; then
+          # Symmetric to the Yarn case: Bun < 1.3.0 (oven-sh/bun#22801) silently ignores
+          # minimumReleaseAge as an unknown bunfig key and would install ungated.
+          BUN_VERSION="$(bun --version)"
+          if [[ "$(printf '%s\n' 1.3.0 "$BUN_VERSION" | sort -V | head -n 1)" != '1.3.0' ]]; then
+            echo "::error::Bun $BUN_VERSION cannot enforce minimumReleaseAge (requires Bun >= 1.3.0), so installs would run without the organization's release-age gate; upgrade Bun to >= 1.3.0."
             exit 1
           fi
         fi
