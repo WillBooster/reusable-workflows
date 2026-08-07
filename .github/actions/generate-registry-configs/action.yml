@@ -49,6 +49,9 @@ runs:
         HAS_TAKUMI_GUARD_TOKEN: ${{ inputs.has-takumi-guard-token }}
         HAS_VERDACCIO_TOKEN: ${{ inputs.has-verdaccio-token }}
       run: |
+        : # .git is referenced as a literal directory: these actions always run at the root of
+        : # an actions/checkout clone (never a worktree/submodule layout, where .git is a file),
+        : # matching the pre-existing dotenv/.npmrc hide pattern in the calling workflows.
         prepare() {
           : # Recover state a crashed previous run may have left behind (the always() cleanup
           : # cannot run when the runner dies): clear a stale skip-worktree bit and restore the
