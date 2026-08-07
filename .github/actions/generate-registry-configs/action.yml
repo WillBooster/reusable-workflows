@@ -17,8 +17,12 @@ description: >-
   are present: the managed entries are reserved for these workflows, so consumers must not rely on
   committed default-registry overrides or extra npmScopes during CI. Residual risk, accepted since
   before this action existed: the repository-controlled yarnPath binary in .yarn/releases/ still
-  executes during the credentialed install and can read the step-scoped tokens. Pair with the
-  cleanup-registry-configs action in an always() step.
+  executes during the credentialed install and can read the step-scoped tokens. The generated
+  files stay in the workspace until the cleanup step, so nested build contexts created mid-job
+  (docker build, remote builders) see them with the token variables unset: npm/yarn1 crash on the
+  unexpanded ${VAR} reference (pre-existing .npmrc behavior) and Yarn Berry fails closed (YN0033)
+  — consumers installing inside such builds must exclude the generated configs from the build
+  context or inject the tokens. Pair with the cleanup-registry-configs action in an always() step.
 inputs:
   has-takumi-guard-token:
     description: >-
