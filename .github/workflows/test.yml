@@ -101,8 +101,8 @@ jobs:
         with:
           check-latest: true
           node-version: lts/*
-      # The npx call below is pinned (see its comment), so the gate protects only any other or
-      # future registry resolution in this job, on runners whose npm honours min-release-age.
+      # Before every registry resolution: write the organization's release-age gate into the
+      # runner's global package-manager configs.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
@@ -115,9 +115,8 @@ jobs:
              ! ([[ -f .tool-versions ]] && grep -qE '^(node|nodejs)[[:space:]]' .tool-versions) && \
              ! ([[ -f mise.toml ]] && grep -qE '^[[:space:]]*(node|nodejs)[[:space:]]*=' mise.toml); then
             CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
-            : # Pinned: this job may run with a preinstalled npm < 11.10 that ignores the
-            : # min-release-age gate, and published npm versions are immutable, so a pin removes
-            : # the freshly-resolved-latest exposure the gate cannot cover here.
+            : # Pinned: published npm versions are immutable, so a pin keeps this resolution
+            : # reproducible on top of the release-age gate applied above.
             NODE_VERSIONS=$(npx -y semver@7.8.5 -r "$CONSTRAINT" 14.999.999 16.999.999 18.999.999 20.999.999 22.999.999 24.999.999 | xargs | sed 's/ /","/g' | sed 's/\.999\.999//g')
           fi
           echo "json=[\"$NODE_VERSIONS\"]" >> $GITHUB_OUTPUT
@@ -274,14 +273,11 @@ jobs:
             poetry config virtualenvs.in-project true
           fi
 
-      # Before every install: on ephemeral GitHub-hosted runners this writes the global release-age
-      # gate (self-hosted runners get it from self-host-utils via wbfy), and in both environments
-      # it fails the job when the selected package manager is too old to enforce the gate.
+      # Before every install: write the organization's release-age gate into the runner's global
+      # package-manager configs.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
-        with:
-          runner: ${{ steps.env-info.outputs.runner }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v6.1.0
         with:
@@ -580,8 +576,7 @@ jobs:
             (which docker && sleep 5 && sudo reboot) &
           fi
           : # port — lsof instead of `npx kill-port`: this always() step must not resolve a fresh
-          : # package from the registry (it can run before/without the release-age gate, and the
-          : # legacy-Node matrix legs have npm versions that ignore min-release-age anyway).
+          : # package from the registry, since it can run before the release-age gate is applied.
           : # LISTEN only: a bare `-i :3000` also matches processes merely CONNECTED to port 3000
           : # (e.g. another job's test client on this shared runner), which must not be killed.
           (lsof -t -i TCP:3000 -sTCP:LISTEN | xargs -r kill -9) 2> /dev/null &
