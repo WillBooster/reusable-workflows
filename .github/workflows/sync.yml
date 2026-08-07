@@ -38,12 +38,6 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
-      # The global gate age-gates the one-way-git-sync dependency tree resolved by bunx below
-      # (one-way-git-sync itself is an organization package on the exclusion list, so only its
-      # transitive dependencies are gated). The action also isolates TMPDIR so a pre-gate bunx
-      # payload cache cannot bypass the gate.
-      - name: Apply the minimum-release-age policy to global package-manager configs
-        uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
       - name: Show environment information
         run: |
           echo "bun: $(bun -v)"
