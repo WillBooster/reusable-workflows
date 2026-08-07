@@ -68,8 +68,8 @@ runs:
             printf '    "%s",\n' "${EXCLUDES[@]}"
             printf ']\n'
           } > "$HOME/.bunfig.toml"
-          # min-release-age needs npm >= 11.10 and min-release-age-exclude needs npm >= 12; older
-          # npm only warns about the unknown keys, and yarn1 ignores them.
+          # min-release-age needs npm >= 11.10 and min-release-age-exclude needs npm >= 11.17;
+          # older npm only warns about the unknown keys, and yarn1 ignores them.
           {
             printf 'min-release-age=7\n'
             printf 'min-release-age-exclude[]=%s\n' "${EXCLUDES[@]}"
