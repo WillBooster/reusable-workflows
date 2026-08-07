@@ -101,7 +101,8 @@ jobs:
         with:
           check-latest: true
           node-version: lts/*
-      # The npx -y semver fallback below resolves a fresh version from the registry.
+      # The npx call below is pinned (see its comment), so the gate protects only any other or
+      # future registry resolution in this job, on runners whose npm honours min-release-age.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
