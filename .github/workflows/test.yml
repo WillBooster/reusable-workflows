@@ -497,8 +497,11 @@ jobs:
         env:
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
-      # When an install has to UPDATE bun.lock while the generated .npmrc points the default
-      # registry at Takumi Guard, bun rewrites the `resolved` URL of every ALREADY-LOCKED package
+      # When an install has to UPDATE bun.lock while an .npmrc points the default registry at
+      # Takumi Guard (the generated workspace .npmrc with a caller token, or the persistent
+      # anonymous ~/.npmrc that WillBooster/self-host-utils provisions on self-hosted runner
+      # machines — hence no token gate on this step), bun rewrites the
+      # `resolved` URL of every ALREADY-LOCKED package
       # to https://npm.flatt.tech/… (newly added packages correctly keep ""). The fixer steps
       # below would then report those URLs as a fix to apply, pinning a shared lockfile to one environment's mirror:
       # a cold-cache `bun install` afterwards downloads from the proxy on every machine, and fails
@@ -512,7 +515,7 @@ jobs:
       # DIRECT tarball dependency carries the same host in two other places that must survive: the
       # workspace descriptor (`"pkg": "https://…"`, preceded by `": `) and its package tuple's
       # first element (`"pkg@https://…"`), whose entry has no `resolved` slot at all.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_TAKUMI_GUARD_TOKEN == 'true' }}
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Keep the Takumi Guard proxy out of the committed lockfile
         run: |
           if [[ ! -f bun.lock ]]; then exit 0; fi
