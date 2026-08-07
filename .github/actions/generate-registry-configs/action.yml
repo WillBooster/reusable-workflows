@@ -13,8 +13,12 @@ description: >-
   the files are hidden from git (skip-worktree for tracked files, a root-scoped exclude entry
   otherwise) so commit-and-push workflows cannot commit them. The Berry `plugins:` block is also
   stripped for the rest of the job: a repository-committed plugin is config-driven code execution
-  that could read the registry tokens (#453). Pair with the cleanup-registry-configs action in an
-  always() step.
+  that could read the registry tokens (#453). Stripping is deliberately NOT keyed on which tokens
+  are present: the managed entries are reserved for these workflows, so consumers must not rely on
+  committed default-registry overrides or extra npmScopes during CI. Residual risk, accepted since
+  before this action existed: the repository-controlled yarnPath binary in .yarn/releases/ still
+  executes during the credentialed install and can read the step-scoped tokens. Pair with the
+  cleanup-registry-configs action in an always() step.
 inputs:
   has-takumi-guard-token:
     description: >-
@@ -87,22 +91,27 @@ runs:
         if [[ -f .yarnrc.yml ]]; then
           : # Drop the top-level `plugins:` block (#453) and the managed registry keys rewritten
           : # below (each block runs up to the next top-level key; column-0 comments do not end
-          : # a block); keep every other line untouched.
+          : # a block); keep every other line untouched. Exotic-but-valid YAML spellings (quoted
+          : # keys, space before the colon) evade this line filter, but a repository able to
+          : # commit such a file already controls the committed yarnPath binary that runs with
+          : # the same step-scoped tokens (the residual risk accepted in the description), so
+          : # the filter targets honest configs carrying a compromised third-party plugin.
           awk '/^(plugins|npmRegistryServer|npmRegistries|npmScopes):/ { skip = 1; next } skip && /^[^[:space:]#]/ { skip = 0 } !skip' .yarnrc.yml > "$YARNRC_TMP"
         fi
         : # ${VAR-} expands to '' when the variable is unset, so yarn commands in steps without
-        : # the secrets keep working; Berry omits empty npmAuthToken values from requests.
+        : # the secrets keep working. npmAlwaysAuth: Berry only attaches the token to
+        : # metadata/tarball GETs when asked to; with an empty token it still requests
+        : # anonymously instead of failing, so the tokenless lifecycle replay keeps working.
         if [[ "$HAS_TAKUMI_GUARD_TOKEN" == 'true' ]]; then
           {
             echo 'npmRegistryServer: "https://npm.flatt.tech/"'
             echo 'npmRegistries:'
             echo '  "https://npm.flatt.tech/":'
             echo '    npmAuthToken: "${TAKUMI_GUARD_TOKEN-}"'
+            echo '    npmAlwaysAuth: true'
           } >> "$YARNRC_TMP"
         fi
         if [[ "$HAS_VERDACCIO_TOKEN" == 'true' ]]; then
-          : # npmAlwaysAuth: Berry only attaches the token to metadata/tarball GETs when asked to,
-          : # and the private registry rejects anonymous reads.
           {
             echo 'npmScopes:'
             echo '  willbooster-private:'
