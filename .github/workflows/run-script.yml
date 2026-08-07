@@ -207,6 +207,13 @@ jobs:
           if [[ "$HAS_VERDACCIO_TOKEN" == "true" || ("$HAS_TAKUMI_GUARD_TOKEN" == "true" && -n "${NPMRC_AWARE:-}") ]]; then
             echo "hardened-install=true" >> $GITHUB_OUTPUT
           fi
+      # Before every install: on ephemeral GitHub-hosted runners this writes the global release-age
+      # gate (self-hosted runners get it from self-host-utils via wbfy), and in both environments
+      # it fails the job when the selected package manager is too old to enforce the gate.
+      - name: Apply the minimum-release-age policy to global package-manager configs
+        uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
+        with:
+          runner: ${{ steps.env-info.outputs.runner }}
       - if: ${{ steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v6.1.0
         with:
