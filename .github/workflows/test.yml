@@ -277,6 +277,11 @@ jobs:
             poetry config virtualenvs.in-project true
           fi
 
+      # Before every install: freshly RESOLVED versions (update/release runs, non-frozen installs)
+      # must be age-gated even for repositories without a committed gate in their own configs.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Apply the minimum-release-age policy to global package-manager configs
+        uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v6.1.0
         with:

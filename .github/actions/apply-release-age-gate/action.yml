@@ -1,0 +1,146 @@
+name: Apply release-age gate
+description: >-
+  Apply the organization's 7-day minimum-release-age policy to the runner's GLOBAL package-manager
+  configs (~/.bunfig.toml, ~/.yarnrc.yml, ~/.npmrc) before any install. Repository configs guard
+  only wbfied repositories; consumers without a committed gate (and freshly resolved versions in
+  update/release runs) are otherwise unprotected on CI. Project-level configuration takes
+  precedence in all three managers, so wbfied repositories keep their own (identical) gate and
+  exclusion list. Values and markers mirror wbfy's ensureGlobalReleaseAgeGates
+  (WillBooster/shared packages/wbfy/src/generators/globalReleaseAgeGate.ts) so the two tools
+  manage the same block interchangeably on persistent self-hosted runners.
+runs:
+  using: composite
+  steps:
+    - name: Apply the minimum-release-age policy to global package-manager configs
+      shell: bash
+      run: |
+        START_MARKER='# wbfy:start release-age-gate'
+        END_MARKER='# wbfy:end release-age-gate'
+        # 7 days, expressed in each manager's unit: seconds (Bun), minutes (Yarn), days (npm).
+        BUN_SECONDS=604800
+        YARN_MINUTES=10080
+        NPM_DAYS=7
+        # Only the organization's own packages are exempt: we control who publishes them. Keep in
+        # sync with bunMinimumReleaseAgeExcludes in WillBooster/shared
+        # (packages/wbfy/src/generators/bunfig.ts) — that constant is the canonical vetted list.
+        EXCLUDES=(
+          '@exercode/problem-utils'
+          '@willbooster-private/agentic-workflows'
+          '@willbooster-private/ai-ocr'
+          '@willbooster-private/llm-proxy'
+          '@willbooster/agent-skills'
+          '@willbooster/babel-configs'
+          '@willbooster/monaco-loader'
+          '@willbooster/monaco-react'
+          '@willbooster/oxfmt-config'
+          '@willbooster/oxlint-config'
+          '@willbooster/prettier-config'
+          '@willbooster/react-frame-component'
+          '@willbooster/shared-lib'
+          '@willbooster/shared-lib-blitz-next'
+          '@willbooster/shared-lib-next'
+          '@willbooster/shared-lib-node'
+          '@willbooster/shared-lib-react'
+          '@willbooster/wb'
+          'agent-runtime-kit'
+          'at-decorators'
+          'build-ts'
+          'gen-i18n-ts'
+          'one-way-git-sync'
+          'vinext-progress'
+        )
+
+        strip_managed_block() {
+          [[ -f "$1" ]] || return 0
+          awk -v start="$START_MARKER" -v end="$END_MARKER" '
+            index($0, start) { skip = 1 }
+            !skip { print }
+            index($0, end) { skip = 0 }
+          ' "$1"
+        }
+        write_managed() { # $1=path $2=rest-without-block $3=managed block ('' = remove the block)
+          local new_content
+          if [[ -n "$2" && -n "$3" ]]; then
+            new_content="$2"$'\n\n'"$3"
+          else
+            new_content="$2$3"
+          fi
+          local old_content=''
+          [[ -f "$1" ]] && old_content="$(cat "$1")"
+          [[ "$new_content" == "$old_content" ]] && return 0
+          # mktemp + mv so a symlinked config cannot redirect the write into an unexpected target
+          # (the .npmrc generation pattern), and readers never observe a half-written file.
+          local tmp
+          tmp="$(mktemp "${RUNNER_TEMP:-/tmp}/age-gate.XXXXXX")"
+          printf '%s\n' "$new_content" > "$tmp"
+          rm -f "$1"
+          mv "$tmp" "$1"
+          echo "Applied the minimum-release-age policy to $1"
+        }
+
+        # ~/.bunfig.toml — Bun merges the global config under the project's per key, so wbfied
+        # repositories keep their committed (identical) gate. Bun ignores unknown bunfig keys, so
+        # versions predating minimumReleaseAge are unaffected. Bun also reads
+        # $XDG_CONFIG_HOME/.bunfig.toml with undocumented precedence when both exist; update it
+        # too so a stale copy there cannot win.
+        BUNFIG_BLOCK="$START_MARKER
+        [install]
+        minimumReleaseAge = $BUN_SECONDS # 7 days
+        minimumReleaseAgeExcludes = [
+        $(printf '    "%s",\n' "${EXCLUDES[@]}")
+        ]
+        $END_MARKER"
+        BUNFIG_PATHS=("$HOME/.bunfig.toml")
+        if [[ -n "${XDG_CONFIG_HOME:-}" && -f "$XDG_CONFIG_HOME/.bunfig.toml" ]]; then
+          BUNFIG_PATHS+=("$XDG_CONFIG_HOME/.bunfig.toml")
+        fi
+        for bunfig_path in "${BUNFIG_PATHS[@]}"; do
+          rest="$(strip_managed_block "$bunfig_path")"
+          # A hand-written [install] section (or gate key) outside the managed block would collide
+          # with the appended one — TOML forbids duplicate tables. Fail safe: warn and leave the
+          # file alone instead of corrupting it.
+          if grep -qE '^[ \t]*\[install]|minimumReleaseAge' <<< "$rest"; then
+            echo "::warning::Skipped updating $bunfig_path: it configures [install] or minimumReleaseAge outside the managed release-age-gate block."
+          else
+            write_managed "$bunfig_path" "$rest" "$BUNFIG_BLOCK"
+          fi
+        done
+
+        # ~/.npmrc — no ${VAR} references, so unlike the credentialed project .npmrc it is safe to
+        # persist on self-hosted runners; npm versions predating min-release-age (< 11.10) only
+        # warn about the unknown key, and yarn1 ignores it. npm has no exclusion setting yet.
+        NPMRC_PATH="$HOME/.npmrc"
+        rest="$(strip_managed_block "$NPMRC_PATH")"
+        if grep -qE '^[ \t]*min-release-age[ \t]*=' <<< "$rest"; then
+          echo "::warning::Skipped updating $NPMRC_PATH: it sets min-release-age outside the managed release-age-gate block."
+        else
+          write_managed "$NPMRC_PATH" "$rest" "$START_MARKER
+        min-release-age=$NPM_DAYS
+        $END_MARKER"
+        fi
+
+        # ~/.yarnrc.yml — npmMinimalAgeGate exists only in Yarn >= 4.10, and older Yarn Berry
+        # versions REJECT unknown settings, so the block is written only when the repository's own
+        # yarn is new enough — and actively removed otherwise, so on a persistent self-hosted
+        # runner a block written for one repository cannot break the next repository's older yarn.
+        # Minutes as a plain number: Yarn's duration parser silently ignores day suffixes
+        # (yarnpkg/berry#6899), which would disable the gate entirely.
+        YARNRC_PATH="$HOME/.yarnrc.yml"
+        YARN_VERSION=''
+        if command -v yarn > /dev/null; then
+          YARN_VERSION="$(yarn --version 2> /dev/null || true)"
+        fi
+        rest="$(strip_managed_block "$YARNRC_PATH")"
+        if grep -qE '^[ \t]*(npmMinimalAgeGate|npmPreapprovedPackages)[ \t]*:' <<< "$rest"; then
+          echo "::warning::Skipped updating $YARNRC_PATH: it sets npmMinimalAgeGate or npmPreapprovedPackages outside the managed release-age-gate block."
+        elif [[ -n "$YARN_VERSION" && "$YARN_VERSION" != 1.* ]] && \
+             [[ "$(printf '%s\n' 4.10.0 "$YARN_VERSION" | sort -V | head -n 1)" == '4.10.0' ]]; then
+          YARNRC_BLOCK="$START_MARKER
+        npmMinimalAgeGate: $YARN_MINUTES # 7 days
+        npmPreapprovedPackages:
+        $(printf "  - '%s'\n" "${EXCLUDES[@]}")
+        $END_MARKER"
+          write_managed "$YARNRC_PATH" "$rest" "$YARNRC_BLOCK"
+        elif [[ -f "$YARNRC_PATH" ]]; then
+          write_managed "$YARNRC_PATH" "$rest" ''
+        fi

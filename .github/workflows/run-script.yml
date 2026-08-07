@@ -207,6 +207,10 @@ jobs:
           if [[ "$HAS_VERDACCIO_TOKEN" == "true" || ("$HAS_TAKUMI_GUARD_TOKEN" == "true" && -n "${NPMRC_AWARE:-}") ]]; then
             echo "hardened-install=true" >> $GITHUB_OUTPUT
           fi
+      # Before every install: freshly RESOLVED versions (update/release runs, non-frozen installs)
+      # must be age-gated even for repositories without a committed gate in their own configs.
+      - name: Apply the minimum-release-age policy to global package-manager configs
+        uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
       - if: ${{ steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v6.1.0
         with:
