@@ -197,7 +197,8 @@ jobs:
             echo "runner=yarn" >> $GITHUB_OUTPUT
           fi
       # Before every install: on ephemeral GitHub-hosted runners this writes the global release-age
-      # gate; self-hosted runners get the same content from self-host-utils.
+      # gate (self-hosted runners get the same content from self-host-utils instead), and in both
+      # environments it fails the job when the Yarn or Bun on PATH is too old to enforce it.
       - name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
       - if: ${{ steps.env-info.outputs.yarn-dir }}
