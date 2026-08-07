@@ -96,26 +96,10 @@ jobs:
       # Runs before any dependency install so an infected tree never executes its preinstall hook.
       - name: Check for Shai-Hulud supply chain attack traces
         uses: WillBooster/reusable-workflows/.github/actions/check-shai-hulud@main
-      # Route ALL default-registry installs on this runner through the Takumi Guard proxy
-      # (https://flatt.tech/takumi/features/guard), which blocks known-malicious packages such as
-      # the Shai-Hulud worm releases. The workspace .npmrc generated below only exists when the
-      # caller passes a registry token; this persistent ~/.npmrc additionally covers tokenless
-      # repositories and installs outside the workspace (e.g. ci-setup scripts running npx) via
-      # Guard's public anonymous token, which is not a secret and therefore safe to hardcode (a
-      # literal token also cannot trigger yarn1's undefined-env-var crash). Only the managed lines
-      # are rewritten so persistent self-hosted runner homes keep other user-level configuration.
+      # Covers tokenless repositories and installs outside the workspace, unlike the token-gated
+      # workspace .npmrc generated below; see the action's description for details.
       - name: Generate ~/.npmrc routing the default npm registry through Takumi Guard
-        run: |
-          NPMRC_TMP=$(mktemp "$RUNNER_TEMP/home-npmrc.XXXXXX")
-          if [[ -f "$HOME/.npmrc" ]]; then
-            grep -vE '^registry=|^//npm\.flatt\.tech/:_authToken' "$HOME/.npmrc" > "$NPMRC_TMP" || true
-            if [[ -s "$NPMRC_TMP" && -n "$(tail -c1 "$NPMRC_TMP")" ]]; then echo >> "$NPMRC_TMP"; fi
-          fi
-          echo 'registry=https://npm.flatt.tech/' >> "$NPMRC_TMP"
-          echo '//npm.flatt.tech/:_authToken=tg_anon_GhCM35SmGCSNcHWWldyq4PmOmPZRWTZ6w0Kwd36QIN4' >> "$NPMRC_TMP"
-          : # Replace with mv so a pre-existing symlink cannot redirect the managed lines.
-          rm -f "$HOME/.npmrc"
-          mv "$NPMRC_TMP" "$HOME/.npmrc"
+        uses: WillBooster/reusable-workflows/.github/actions/generate-guard-npmrc@main
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
