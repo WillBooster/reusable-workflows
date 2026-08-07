@@ -188,15 +188,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
-      # Runs before any dependency install so an infected tree never executes its preinstall hook.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
-        name: Check for Shai-Hulud supply chain attack traces
-        uses: WillBooster/reusable-workflows/.github/actions/check-shai-hulud@main
-      # Covers tokenless repositories and installs outside the workspace, unlike the token-gated
-      # workspace .npmrc generated below; see the action's description for details.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
-        name: Generate ~/.npmrc routing the default npm registry through Takumi Guard
-        uses: WillBooster/reusable-workflows/.github/actions/generate-guard-npmrc@main
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
@@ -508,7 +499,8 @@ jobs:
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       # When an install has to UPDATE bun.lock while an .npmrc points the default registry at
       # Takumi Guard (the generated workspace .npmrc with a caller token, or the persistent
-      # anonymous ~/.npmrc above — hence no token gate on this step), bun rewrites the
+      # anonymous ~/.npmrc that WillBooster/self-host-utils provisions on self-hosted runner
+      # machines — hence no token gate on this step), bun rewrites the
       # `resolved` URL of every ALREADY-LOCKED package
       # to https://npm.flatt.tech/… (newly added packages correctly keep ""). The fixer steps
       # below would then report those URLs as a fix to apply, pinning a shared lockfile to one environment's mirror:

@@ -124,13 +124,6 @@ jobs:
       - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.branch }}
-      # Runs before any dependency install so an infected tree never executes its preinstall hook.
-      - name: Check for Shai-Hulud supply chain attack traces
-        uses: WillBooster/reusable-workflows/.github/actions/check-shai-hulud@main
-      # Covers tokenless repositories and installs outside the workspace, unlike the token-gated
-      # workspace .npmrc generated below; see the action's description for details.
-      - name: Generate ~/.npmrc routing the default npm registry through Takumi Guard
-        uses: WillBooster/reusable-workflows/.github/actions/generate-guard-npmrc@main
       # Secrets are passed via env and written with printf so that quotes or backslashes in
       # their values cannot break out of the shell command.
       - if: ${{ env.HAS_DOT_ENV == 'true' }}
