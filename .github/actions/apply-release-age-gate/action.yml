@@ -1,29 +1,54 @@
 name: Apply release-age gate
 description: >-
-  Write the organization's minimum-release-age policy into an ephemeral GitHub-hosted runner's
-  GLOBAL package-manager configs (~/.bunfig.toml, ~/.yarnrc.yml, ~/.npmrc) before any install.
+  Fail the job when the installed package manager is too old to enforce the organization's
+  minimum-release-age policy, and write that policy into an ephemeral GitHub-hosted runner's GLOBAL
+  package-manager configs (~/.bunfig.toml, ~/.yarnrc.yml, ~/.npmrc) before any install.
   WillBooster/shared's packages/wbfy/configs/releaseAgeGate.json is the single source of truth and
   the script next to it the single implementation, shared with the self-hosted runners
   (self-host-utils) and developer machines (wbfy), so every environment ends up with byte-identical
-  settings. No package-manager version is probed: the organization runs only up-to-date package
-  managers (npm >= 12, Yarn Berry >= 4.11, bun >= 1.3), pinned through the callers' mise.toml.
-  Project-level configuration takes precedence in all three managers, so wbfied repositories keep
-  their own (identical) gate and exclusion list.
+  settings. Project-level configuration takes precedence in all three managers, so wbfied
+  repositories keep their own (identical) gate and exclusion list. Known gaps: Yarn 1 supports no
+  gate at all, and the npm bundled with the caller's Node may predate `min-release-age-exclude`
+  (npm >= 11.17), which only over-gates — it never disables the gate.
 runs:
   using: composite
   steps:
     - name: Apply the minimum-release-age policy to global package-manager configs
       shell: bash
       env:
-        CONFIGS_URL: https://raw.githubusercontent.com/WillBooster/shared/main/packages/wbfy/configs
+        CONFIGS_API_URL: https://api.github.com/repos/WillBooster/shared/contents/packages/wbfy/configs
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
+        # A package manager too old for the gate ignores it SILENTLY and installs ungated (verified:
+        # Yarn 4.9.4 resolves a quarantined version with a warning while 4.10.3 blocks it; Bun
+        # < 1.3.0 treats minimumReleaseAge as an unknown bunfig key), so it must fail the job here
+        # instead. Yarn 1 is exempt — a known policy gap — and is also what `yarn` resolves to on a
+        # runner whose repository does not use Yarn Berry at all.
+        YARN_VERSION="$(yarn --version 2> /dev/null || echo 1.0.0)"
+        if [[ "$YARN_VERSION" != 1.* ]] && \
+           [[ "$(printf '%s\n' 4.10.0 "$YARN_VERSION" | sort -V | head -n 1)" != '4.10.0' ]]; then
+          echo "::error::Yarn $YARN_VERSION cannot enforce npmMinimalAgeGate (requires Yarn >= 4.10), so installs would run without the organization's release-age gate; upgrade Yarn."
+          exit 1
+        fi
+        if command -v bun > /dev/null; then
+          BUN_VERSION="$(bun --version)"
+          if [[ "$(printf '%s\n' 1.3.0 "$BUN_VERSION" | sort -V | head -n 1)" != '1.3.0' ]]; then
+            echo "::error::Bun $BUN_VERSION cannot enforce minimumReleaseAge (requires Bun >= 1.3.0), so installs would run without the organization's release-age gate; upgrade Bun."
+            exit 1
+          fi
+        fi
+
         # Self-hosted runners are provisioned by self-host-utils with the same content from the same
         # policy file, and rewriting their machine-global configs from a job would race with the
         # installs of the other jobs sharing the machine.
         if [[ "${RUNNER_ENVIRONMENT:-}" != 'github-hosted' ]]; then exit 0; fi
         cd "$(mktemp -d)"
-        # Retry: a momentary blip on an anonymous raw.githubusercontent.com fetch must not fail the job.
-        curl --fail --show-error --silent --location --remote-name-all \
-          --retry 5 --retry-all-errors --retry-delay 2 \
-          "$CONFIGS_URL/applyReleaseAgeGate.sh" "$CONFIGS_URL/releaseAgeGate.json"
+        # The authenticated Contents API instead of anonymous raw.githubusercontent.com, whose
+        # per-IP limit rate-limits runners with 429s; retry so a blip cannot fail the job.
+        for file in applyReleaseAgeGate.sh releaseAgeGate.json; do
+          curl --fail --show-error --silent --retry 5 --retry-all-errors --retry-delay 2 \
+            -H "authorization: Bearer ${GITHUB_TOKEN}" \
+            -H 'accept: application/vnd.github.raw+json' \
+            -o "$file" "$CONFIGS_API_URL/$file"
+        done
         bash applyReleaseAgeGate.sh
