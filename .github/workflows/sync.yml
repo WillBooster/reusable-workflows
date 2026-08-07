@@ -40,13 +40,10 @@ jobs:
           bun-version: latest
       # The global gate age-gates the one-way-git-sync dependency tree resolved by bunx below
       # (one-way-git-sync itself is an organization package on the exclusion list, so only its
-      # transitive dependencies are gated).
+      # transitive dependencies are gated). The action also isolates TMPDIR so a pre-gate bunx
+      # payload cache cannot bypass the gate.
       - name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
-      # bunx reuses payloads cached under $TMPDIR/bunx-*, so on the persistent self-hosted runner
-      # a pre-gate cached one-way-git-sync would bypass the age gate; RUNNER_TEMP is emptied every
-      # job, which forces the first bunx resolution of each run to happen under the gate.
-      - run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Show environment information
         run: |
           echo "bun: $(bun -v)"

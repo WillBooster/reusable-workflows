@@ -114,7 +114,10 @@ jobs:
              ! ([[ -f .tool-versions ]] && grep -qE '^(node|nodejs)[[:space:]]' .tool-versions) && \
              ! ([[ -f mise.toml ]] && grep -qE '^[[:space:]]*(node|nodejs)[[:space:]]*=' mise.toml); then
             CONSTRAINT=$(node -e "console.log(((require('./package.json') || {}).engines || {}).node)")
-            NODE_VERSIONS=$(npx -y semver -r "$CONSTRAINT" 14.999.999 16.999.999 18.999.999 20.999.999 22.999.999 24.999.999 | xargs | sed 's/ /","/g' | sed 's/\.999\.999//g')
+            : # Pinned: this job may run with a preinstalled npm < 11.10 that ignores the
+            : # min-release-age gate, and published npm versions are immutable, so a pin removes
+            : # the freshly-resolved-latest exposure the gate cannot cover here.
+            NODE_VERSIONS=$(npx -y semver@7.8.5 -r "$CONSTRAINT" 14.999.999 16.999.999 18.999.999 20.999.999 22.999.999 24.999.999 | xargs | sed 's/ /","/g' | sed 's/\.999\.999//g')
           fi
           echo "json=[\"$NODE_VERSIONS\"]" >> $GITHUB_OUTPUT
   test:
@@ -694,4 +697,6 @@ jobs:
           : # port — lsof instead of `npx kill-port`: this always() step must not resolve a fresh
           : # package from the registry (it can run before/without the release-age gate, and the
           : # legacy-Node matrix legs have npm versions that ignore min-release-age anyway).
-          (lsof -t -i :3000 | xargs kill -9) 2> /dev/null &
+          : # LISTEN only: a bare `-i :3000` also matches processes merely CONNECTED to port 3000
+          : # (e.g. another job's test client on this shared runner), which must not be killed.
+          (lsof -t -i TCP:3000 -sTCP:LISTEN | xargs -r kill -9) 2> /dev/null &

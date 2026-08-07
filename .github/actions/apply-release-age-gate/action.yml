@@ -116,6 +116,13 @@ runs:
         $(printf "  - '%s'\n" "${EXCLUDES[@]}")
         $END_MARKER"
 
+        # bunx executes payloads cached under $TMPDIR/bunx-* without re-resolving, so on a
+        # persistent self-hosted runner a pre-gate cached payload would bypass the age gate.
+        # RUNNER_TEMP is emptied every job, which forces each job's first bunx resolution to
+        # happen under the gate (bun applies the global minimumReleaseAge to bunx resolution:
+        # bare/range specs fall back to the newest old-enough version, exact pins hard-fail).
+        echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
         # Yarn 1 is exempt: the calling workflows still support Yarn 1 repositories even though it
         # cannot enforce any age gate (it ignores .yarnrc.yml, and npm's min-release-age does not
         # apply to its resolution) — a known policy gap, not an oversight.
