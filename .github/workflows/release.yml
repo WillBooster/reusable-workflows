@@ -171,6 +171,8 @@ jobs:
       # must be age-gated even for repositories without a committed gate in their own configs.
       - name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
+        with:
+          runner: ${{ steps.env-info.outputs.runner }}
       - if: ${{ steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v6.1.0
         with:

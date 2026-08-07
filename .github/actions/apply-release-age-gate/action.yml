@@ -1,18 +1,31 @@
 name: Apply release-age gate
 description: >-
-  Apply the organization's 7-day minimum-release-age policy to the runner's GLOBAL package-manager
-  configs (~/.bunfig.toml, ~/.yarnrc.yml, ~/.npmrc) before any install. Repository configs guard
-  only wbfied repositories; consumers without a committed gate (and freshly resolved versions in
-  update/release runs) are otherwise unprotected on CI. Project-level configuration takes
-  precedence in all three managers, so wbfied repositories keep their own (identical) gate and
-  exclusion list. Values and markers mirror wbfy's ensureGlobalReleaseAgeGates
-  (WillBooster/shared packages/wbfy/src/generators/globalReleaseAgeGate.ts) so the two tools
-  manage the same block interchangeably on persistent self-hosted runners.
+  Force-overwrite the runner's GLOBAL package-manager configs (~/.bunfig.toml, ~/.yarnrc.yml,
+  ~/.npmrc) with the organization's 7-day minimum-release-age policy before any install.
+  Repository configs guard only wbfied repositories; consumers without a committed gate (and
+  freshly resolved versions in update/release runs) are otherwise unprotected on CI. Project-level
+  configuration takes precedence in all three managers, so wbfied repositories keep their own
+  (identical) gate and exclusion list. Hand-editing these global files on CI machines is not
+  permitted, so the whole file content is deliberately replaced on every run instead of merged —
+  any manual edit is discarded. Values and markers mirror wbfy's ensureGlobalReleaseAgeGates
+  (WillBooster/shared packages/wbfy/src/generators/globalReleaseAgeGate.ts) so a wbfy run on the
+  same machine recognizes and manages the same block instead of appending a duplicate.
+inputs:
+  runner:
+    description: >-
+      The install runner selected by the calling workflow's env-info step ('bun' or 'yarn'). When
+      'yarn', the action DELIBERATELY fails the job for Yarn Berry < 4.10: Yarn loads the home rc
+      in loose mode (yarnpkg/berry#2638), so older Berry silently ignores npmMinimalAgeGate and
+      would install ungated — which is not acceptable; the hard failure forces the repository to
+      upgrade to Yarn >= 4.10. Leave empty in jobs that never install with Yarn.
+    default: ''
 runs:
   using: composite
   steps:
     - name: Apply the minimum-release-age policy to global package-manager configs
       shell: bash
+      env:
+        RUNNER: ${{ inputs.runner }}
       run: |
         START_MARKER='# wbfy:start release-age-gate'
         END_MARKER='# wbfy:end release-age-gate'
@@ -50,33 +63,19 @@ runs:
           'vinext-progress'
         )
 
-        strip_managed_block() {
-          [[ -f "$1" ]] || return 0
-          awk -v start="$START_MARKER" -v end="$END_MARKER" '
-            index($0, start) { skip = 1 }
-            !skip { print }
-            index($0, end) { skip = 0 }
-          ' "$1"
-        }
-        write_file() { # $1=path $2=new content
+        write_file() { # $1=path $2=content
           local old_content=''
           [[ -f "$1" ]] && old_content="$(cat "$1")"
           [[ "$2" == "$old_content" ]] && return 0
-          # mktemp + mv so a symlinked config cannot redirect the write into an unexpected target
-          # (the .npmrc generation pattern), and readers never observe a half-written file.
+          # mktemp in the destination directory + mv: rename(2) replaces even a symlinked config
+          # itself (never writing through it), is atomic (no window where the file is missing or
+          # half-written for concurrent jobs on a persistent runner), and cannot degrade into a
+          # cross-filesystem copy.
           local tmp
-          tmp="$(mktemp "${RUNNER_TEMP:-/tmp}/age-gate.XXXXXX")"
+          tmp="$(mktemp "$(dirname "$1")/.age-gate.XXXXXX")"
           printf '%s\n' "$2" > "$tmp"
-          rm -f "$1"
           mv "$tmp" "$1"
           echo "Applied the minimum-release-age policy to $1"
-        }
-        join_block() { # $1=rest-without-block $2=block; prints the combined content
-          if [[ -n "$1" ]]; then
-            printf '%s\n\n%s' "$1" "$2"
-          else
-            printf '%s' "$2"
-          fi
         }
 
         # ~/.bunfig.toml — Bun merges the global config under the project's per key, so wbfied
@@ -85,95 +84,46 @@ runs:
         # reads $XDG_CONFIG_HOME/.bunfig.toml INSTEAD of $HOME/.bunfig.toml, so that path must be
         # managed (and created) whenever the variable is set; $HOME is still written for processes
         # that run without the variable.
-        BUNFIG_GATE_KEYS="$START_MARKER
+        BUNFIG_CONTENT="$START_MARKER
+        [install]
         minimumReleaseAge = $BUN_SECONDS # 7 days
         minimumReleaseAgeExcludes = [
         $(printf '    "%s",\n' "${EXCLUDES[@]}")
         ]
         $END_MARKER"
-        # The [install] header stays OUTSIDE the managed markers: TOML table scope continues after
-        # the end marker, so stripping a block that contained the header would silently move any
-        # keys a human appended below it to the top level on the next run.
-        INSTALL_HEADER_PATTERN='^ *\[[ "'\'']*install[ "'\'']*\] *(#.*)?$'
-        BUNFIG_PATHS=("$HOME/.bunfig.toml")
+        write_file "$HOME/.bunfig.toml" "$BUNFIG_CONTENT"
         if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
           mkdir -p "$XDG_CONFIG_HOME"
-          BUNFIG_PATHS+=("$XDG_CONFIG_HOME/.bunfig.toml")
+          write_file "$XDG_CONFIG_HOME/.bunfig.toml" "$BUNFIG_CONTENT"
         fi
-        for bunfig_path in "${BUNFIG_PATHS[@]}"; do
-          rest="$(strip_managed_block "$bunfig_path")"
-          # A hand-written gate key outside the managed block would collide with the managed one
-          # (TOML forbids duplicate keys). Fail safe: warn and leave the file alone instead of
-          # corrupting it. Assignments only — a comment merely mentioning the key is no conflict.
-          if grep -qE '^[ \t]*minimumReleaseAge(Excludes)?[ \t]*=' <<< "$rest"; then
-            echo "::warning::Skipped updating $bunfig_path: it sets minimumReleaseAge(Excludes) outside the managed release-age-gate block."
-          elif grep -qE "$INSTALL_HEADER_PATTERN" <<< "$rest"; then
-            # TOML forbids a second [install] header (quoted spellings like ["install"] are the
-            # same table), so insert the managed keys right after the existing header instead.
-            # Pure bash: BSD awk (macOS self-hosted runners) rejects -v values with newlines.
-            content=''
-            inserted=0
-            while IFS= read -r line; do
-              content+="$line"$'\n'
-              if [[ "$inserted" -eq 0 && "$line" =~ $INSTALL_HEADER_PATTERN ]]; then
-                content+="$BUNFIG_GATE_KEYS"$'\n'
-                inserted=1
-              fi
-            done <<< "$rest"
-            write_file "$bunfig_path" "${content%$'\n'}"
-          else
-            write_file "$bunfig_path" "$(join_block "$rest" "[install]
-        $BUNFIG_GATE_KEYS")"
-          fi
-        done
 
         # ~/.npmrc — no ${VAR} references, so unlike the credentialed project .npmrc it is safe to
         # persist on self-hosted runners. min-release-age needs npm >= 11.10 and
         # min-release-age-exclude needs npm >= 12; older npm only warns about the unknown keys,
         # and yarn1 ignores them.
-        NPMRC_PATH="$HOME/.npmrc"
-        rest="$(strip_managed_block "$NPMRC_PATH")"
-        if grep -qE '^[ \t]*min-release-age(-exclude(\[])?)?[ \t]*=' <<< "$rest"; then
-          echo "::warning::Skipped updating $NPMRC_PATH: it sets min-release-age or min-release-age-exclude outside the managed release-age-gate block."
-        else
-          write_file "$NPMRC_PATH" "$(join_block "$rest" "$START_MARKER
+        write_file "$HOME/.npmrc" "$START_MARKER
         min-release-age=$NPM_DAYS
         $(printf 'min-release-age-exclude[]=%s\n' "${EXCLUDES[@]}")
-        $END_MARKER")"
-        fi
+        $END_MARKER"
 
-        # ~/.yarnrc.yml — npmMinimalAgeGate exists only in Yarn >= 4.10. Yarn Berry loads the HOME
-        # rc in loose mode (yarnpkg/berry#2638), so older Berry versions silently IGNORE these
-        # keys instead of erroring — writing the block alone cannot break them; the explicit
-        # version check below does. Minutes as a plain number: Yarn's duration parser silently
-        # ignores day suffixes (yarnpkg/berry#6899), which would disable the gate entirely.
-        YARNRC_PATH="$HOME/.yarnrc.yml"
-        rest="$(strip_managed_block "$YARNRC_PATH")"
-        if grep -qE '^[ \t]*(npmMinimalAgeGate|npmPreapprovedPackages)[ \t]*:' <<< "$rest"; then
-          echo "::warning::Skipped updating $YARNRC_PATH: it sets npmMinimalAgeGate or npmPreapprovedPackages outside the managed release-age-gate block."
-        elif grep -qE '^\.\.\.[ \t]*$' <<< "$rest"; then
-          # Content appended after a YAML document-end marker makes the file unparsable for every
-          # yarn command; leave such a file alone instead of breaking it.
-          echo "::warning::Skipped updating $YARNRC_PATH: it contains a YAML document-end marker (...), so the managed block cannot be appended safely."
-        else
-          write_file "$YARNRC_PATH" "$(join_block "$rest" "$START_MARKER
+        # ~/.yarnrc.yml — npmMinimalAgeGate needs Yarn >= 4.10; the runner input check below is
+        # what breaks older Yarn (this file alone cannot, see the input description). Minutes as a
+        # plain number: Yarn's duration parser silently ignores day suffixes (yarnpkg/berry#6991),
+        # which would disable the gate entirely.
+        write_file "$HOME/.yarnrc.yml" "$START_MARKER
         npmMinimalAgeGate: $YARN_MINUTES # 7 days
         npmPreapprovedPackages:
         $(printf "  - '%s'\n" "${EXCLUDES[@]}")
-        $END_MARKER")"
-        fi
+        $END_MARKER"
 
-        # Running an old Yarn without an enforceable age gate is NOT acceptable, and the block
-        # above cannot break it by itself (loose mode, see above) — so DELIBERATELY fail the job
-        # to force the repository to upgrade to Yarn >= 4.10. yarn.lock limits the check to
-        # repositories that actually install with Yarn: a preinstalled or mise-provided global
-        # yarn must not fail bun repositories. Yarn 1 is exempt for now because the calling
-        # workflows still support Yarn 1 repositories — note that it cannot enforce any age gate
-        # (it ignores .yarnrc.yml, and npm's min-release-age does not apply to its resolution),
-        # which is a known policy gap, not an oversight.
-        if [[ -f yarn.lock ]] && command -v yarn > /dev/null; then
-          YARN_VERSION="$(yarn --version 2> /dev/null || true)"
-          if [[ -n "$YARN_VERSION" && "$YARN_VERSION" != 1.* ]] && \
+        # Yarn 1 is exempt: the calling workflows still support Yarn 1 repositories even though it
+        # cannot enforce any age gate (it ignores .yarnrc.yml, and npm's min-release-age does not
+        # apply to its resolution) — a known policy gap, not an oversight.
+        if [[ "$RUNNER" == 'yarn' ]]; then
+          # No fallback: when the workflow installs with Yarn, a failed version probe must fail
+          # the job rather than silently skip the enforcement.
+          YARN_VERSION="$(yarn --version)"
+          if [[ "$YARN_VERSION" != 1.* ]] && \
              [[ "$(printf '%s\n' 4.10.0 "$YARN_VERSION" | sort -V | head -n 1)" != '4.10.0' ]]; then
             echo "::error::Yarn $YARN_VERSION cannot enforce npmMinimalAgeGate (requires Yarn >= 4.10), so installs would run without the organization's release-age gate; upgrade Yarn to >= 4.10."
             exit 1

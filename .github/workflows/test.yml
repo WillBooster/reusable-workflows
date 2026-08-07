@@ -283,10 +283,11 @@ jobs:
 
       # Before every install: freshly RESOLVED versions (update/release runs, non-frozen installs)
       # must be age-gated even for repositories without a committed gate in their own configs.
-      # Unconditional (no should_skip guard): the always() cleanup step resolves
-      # `npx --yes kill-port@latest` even on skipped runs, and that resolution must be gated too.
-      - name: Apply the minimum-release-age policy to global package-manager configs
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
+        with:
+          runner: ${{ steps.env-info.outputs.runner }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v6.1.0
         with:
@@ -690,5 +691,7 @@ jobs:
           if [[ ! $(docker ps) ]]; then
             (which docker && sleep 5 && sudo reboot) &
           fi
-          : # port
-          npx --yes kill-port@latest 3000 > /dev/null &
+          : # port — lsof instead of `npx kill-port`: this always() step must not resolve a fresh
+          : # package from the registry (it can run before/without the release-age gate, and the
+          : # legacy-Node matrix legs have npm versions that ignore min-release-age anyway).
+          (lsof -t -i :3000 | xargs kill -9) 2> /dev/null &
