@@ -38,8 +38,9 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: latest
-      # bunx resolves one-way-git-sync (and its dependencies) fresh on every run; the global gate
-      # keeps those resolutions age-gated.
+      # bunx resolves one-way-git-sync and its dependencies fresh on every run; the global gate
+      # age-gates the dependency tree (one-way-git-sync itself is an organization package on the
+      # exclusion list, so only its transitive dependencies are gated).
       - name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
       - name: Show environment information

@@ -101,6 +101,10 @@ jobs:
         with:
           check-latest: true
           node-version: lts/*
+      # The npx -y semver fallback below resolves a fresh version from the registry.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Apply the minimum-release-age policy to global package-manager configs
+        uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         id: detect-node-version-matrix
         # We must use actions/setup-node if no Node.js description exists in mise-managed files and no .node-version exists.
@@ -279,8 +283,9 @@ jobs:
 
       # Before every install: freshly RESOLVED versions (update/release runs, non-frozen installs)
       # must be age-gated even for repositories without a committed gate in their own configs.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
-        name: Apply the minimum-release-age policy to global package-manager configs
+      # Unconditional (no should_skip guard): the always() cleanup step resolves
+      # `npx --yes kill-port@latest` even on skipped runs, and that resolution must be gated too.
+      - name: Apply the minimum-release-age policy to global package-manager configs
         uses: WillBooster/reusable-workflows/.github/actions/apply-release-age-gate@main
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.yarn-dir }}
         uses: actions/cache@v6.1.0
