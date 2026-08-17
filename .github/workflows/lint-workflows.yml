@@ -73,7 +73,7 @@ jobs:
                 end
                 cancel = conc['cancel-in-progress']
                 # Anything but an absent key or a literal false can evaluate true at run time
-                # (a quoted 'true', a ${{ … }} expression), which GitHub rejects with queue: max.
+                # (a quoted true or a dollar-braces expression), which GitHub rejects with queue: max.
                 if conc['queue'] == 'max' && !(cancel.nil? || cancel == false)
                   problems << "#{path}: GitHub rejects `queue: max` unless cancel-in-progress is absent or false, got #{cancel.inspect}"
                 end
