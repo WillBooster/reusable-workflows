@@ -41,6 +41,9 @@ on:
         required: false
       GH_TOKEN:
         required: true
+      NPM_TOKEN:
+        description: auth token for registry.npmjs.org, for packages that token-publish (e.g. first publishes of platform packages, which npm trusted publishing cannot create)
+        required: false
       TAKUMI_GUARD_TOKEN:
         description: auth token for the Takumi Guard malicious-package-blocking registry proxy (used to generate registry configs)
         required: false
@@ -359,7 +362,9 @@ jobs:
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # PAT with contents:write
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
-          NPM_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+          # NPM_TOKEN (registry.npmjs.org) wins over VERDACCIO_TOKEN (private registry):
+          # a repository publishes to one registry, so callers pass at most one of them.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || secrets.VERDACCIO_TOKEN }}
           # The release script's npm invocations expand these tokens from the generated .npmrc.
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
