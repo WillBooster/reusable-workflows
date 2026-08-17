@@ -1,0 +1,41 @@
+name: Lint workflows
+
+# This repository hosts the organization's reusable workflow definitions but had no CI validating
+# them, so a syntax error or invalid expression only surfaced when a caller repository's run
+# failed. actionlint catches those before merge.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+    steps:
+      - uses: actions/checkout@v7.0.0
+      # The download script is pinned to the same release tag as the binary it fetches and
+      # verifies the platform asset against that release.
+      - name: Download actionlint
+        run: bash <(curl --proto '=https' --tlsv1.2 --fail --show-error --silent "https://raw.githubusercontent.com/rhysd/actionlint/v${ACTIONLINT_VERSION}/scripts/download-actionlint.bash") "$ACTIONLINT_VERSION"
+      # shellcheck/pyflakes are disabled: the run: scripts carry ~60 pre-existing info-level
+      # shellcheck findings (mostly SC2086 in long-verified scripts), and enabling it here would
+      # force a risky mass rewrite; enable it after a dedicated cleanup. The -ignore patterns are
+      # false positives from actionlint lagging behind GitHub's newer features (concurrency
+      # queues and the job context's workflow_repository/workflow_sha properties).
+      - name: Run actionlint
+        run: |
+          ./actionlint -no-color \
+            -shellcheck= -pyflakes= \
+            -ignore 'unexpected key "queue" for "concurrency" section' \
+            -ignore 'property "workflow_(repository|sha)" is not defined in object type'
