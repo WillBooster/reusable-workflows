@@ -27,7 +27,7 @@ jobs:
       # committed checksum is what pins the binary actually executed here.
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       # Download to a file (a piped `bash <(curl …)` would swallow curl failures) and verify the
       # tarball against the committed checksum before extracting the binary.
       - name: Download actionlint

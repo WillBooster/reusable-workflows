@@ -30,7 +30,7 @@ jobs:
       # actions/checkout authenticates over HTTPS with GITHUB_TOKEN (no SSH deploy key).
       # one-way-git-sync needs the full history of the synced branch, hence fetch-depth: 0;
       # the sync destination is reached via the DEST_GIT_URL secret, not this checkout.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
