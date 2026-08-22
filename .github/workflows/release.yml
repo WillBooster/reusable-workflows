@@ -12,6 +12,10 @@ on:
         default: production
         required: false
         type: string
+      file_path_1:
+        description: Path to a credential file written immediately before the release command
+        required: false
+        type: string
       github_hosted_runner:
         required: false
         type: boolean
@@ -35,6 +39,8 @@ on:
       DISCORD_WEBHOOK_URL:
         required: false
       DOT_ENV:
+        required: false
+      FILE_CONTENT_1:
         required: false
       FNOX_AGE_KEY:
         description: age secret key to decrypt fnox.toml secrets
@@ -74,6 +80,7 @@ jobs:
       # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
+      HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
       # Either registry token triggers the registry-config generation/cleanup and the hardened
       # install path (scripts-disabled credentialed install + tokenless lifecycle replay).
       HAS_REGISTRY_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.TAKUMI_GUARD_TOKEN }}
@@ -345,6 +352,12 @@ jobs:
           }
           fetch_tags || { sleep 10; fetch_tags; }
           git tag --list | sort > "$RUNNER_TEMP/tags-before-release.txt"
+      - if: ${{ steps.stale-check.outputs.stale != 'true' && inputs.file_path_1 && env.HAS_FILE_CONTENT_1 == 'true' }}
+        name: Write release credential file
+        run: printf '%s\n' "$FILE_CONTENT_1" > "$FILE_PATH_1"
+        env:
+          FILE_CONTENT_1: ${{ secrets.FILE_CONTENT_1 }}
+          FILE_PATH_1: ${{ inputs.file_path_1 }}
       - if: ${{ steps.stale-check.outputs.stale != 'true' }}
         name: Release
         run: |
@@ -485,13 +498,15 @@ jobs:
           CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commit/{3})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tags, steps.post-release-tag.outputs.commit)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
-      # defaults to .env, which some private repos commit.
-      - if: ${{ always() && env.HAS_DOT_ENV == 'true' }}
+      # Delete only files this run wrote: both input paths can name files a consumer commits.
+      - if: ${{ always() && (env.HAS_DOT_ENV == 'true' || env.HAS_FILE_CONTENT_1 == 'true') }}
         name: Delete credential files
-        run: rm -f -- "$DOT_ENV_PATH"
+        run: |
+          if [[ "$HAS_DOT_ENV" == "true" ]]; then rm -f -- "$DOT_ENV_PATH"; fi
+          if [[ "$HAS_FILE_CONTENT_1" == "true" && -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
         env:
           DOT_ENV_PATH: ${{ inputs.dot_env_path }}
+          FILE_PATH_1: ${{ inputs.file_path_1 }}
       - if: ${{ always() && env.HAS_REGISTRY_TOKEN == 'true' }}
         name: Clean up the generated registry configs
         uses: WillBooster/reusable-workflows/.github/actions/cleanup-registry-configs@main
