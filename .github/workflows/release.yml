@@ -498,6 +498,16 @@ jobs:
           CONTENT_JSON: ${{ toJSON(format('[{0}]({1})の最新版 ([{2}]({1}/commit/{3})) をリリースしました。', github.event.repository.name, github.event.repository.html_url, steps.post-release-tag.outputs.tags, steps.post-release-tag.outputs.commit)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
+      - if: ${{ env.HAS_DISCORD_WEBHOOK_URL == 'true' && failure() }}
+        name: Notify release failure
+        run: |
+          printf '{"username":"WillBooster Bot","avatar_url":"https://avatars.githubusercontent.com/u/98675783","allowed_mentions":{"parse":[]},"content":%s}' "$CONTENT_JSON" > "$RUNNER_TEMP/discord-payload.json"
+          curl --retry 2 --fail-with-body -X POST -H "Content-Type: application/json" --data @"$RUNNER_TEMP/discord-payload.json" "$DISCORD_WEBHOOK_URL?wait=true"
+          rm -f "$RUNNER_TEMP/discord-payload.json"
+        env:
+          CONTENT_JSON: ${{ toJSON(format('[{0}]({1})のリリースに[失敗]({1}/actions/runs/{2})しました。', github.event.repository.name, github.event.repository.html_url, github.run_id)) }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
       # Delete only files this run wrote: both input paths can name files a consumer commits.
       - if: ${{ always() && (env.HAS_DOT_ENV == 'true' || env.HAS_FILE_CONTENT_1 == 'true') }}
         name: Delete credential files
