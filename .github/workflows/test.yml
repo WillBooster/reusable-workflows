@@ -86,6 +86,8 @@ jobs:
         uses: WillBooster/reusable-workflows/.github/actions/clear-stale-skip-worktree@main
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       # We need Node.js only if no version is declared in mise-managed files and no .node-version exists.
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         id: check-node
@@ -508,17 +510,24 @@ jobs:
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Test
         run: |
-          if [[ "${{ env.HAS_TEST_COMMAND }}" == "true" ]]; then
-            ${{ steps.env-info.outputs.runner }} run ${{ inputs.custom_test_command }}
+          if [[ "$HAS_TEST_COMMAND" == "true" ]]; then
+            if [[ "$CUSTOM_TEST_COMMAND" == *$'\n'* ]]; then
+              echo '::error::custom_test_command must be a single line'
+              exit 1
+            fi
+            read -r -a custom_test_command <<< "$CUSTOM_TEST_COMMAND"
+            "$RUNNER" run "${custom_test_command[@]}"
           elif grep -q '"test/ci":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run test/ci
+            "$RUNNER" run test/ci
           elif grep -q '"test":' package.json; then
-            ${{ steps.env-info.outputs.runner }} run test
+            "$RUNNER" run test
           fi
         env:
+          CUSTOM_TEST_COMMAND: ${{ inputs.custom_test_command }}
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          RUNNER: ${{ steps.env-info.outputs.runner }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run lint-staged
         run: |
