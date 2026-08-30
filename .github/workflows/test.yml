@@ -511,7 +511,8 @@ jobs:
         name: Test
         run: |
           if [[ "$HAS_TEST_COMMAND" == "true" ]]; then
-            "$RUNNER" run "$CUSTOM_TEST_COMMAND"
+            read -r -a custom_test_command <<< "$CUSTOM_TEST_COMMAND"
+            "$RUNNER" run "${custom_test_command[@]}"
           elif grep -q '"test/ci":' package.json; then
             "$RUNNER" run test/ci
           elif grep -q '"test":' package.json; then
