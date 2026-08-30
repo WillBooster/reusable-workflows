@@ -511,6 +511,10 @@ jobs:
         name: Test
         run: |
           if [[ "$HAS_TEST_COMMAND" == "true" ]]; then
+            if [[ "$CUSTOM_TEST_COMMAND" == *$'\n'* ]]; then
+              echo '::error::custom_test_command must be a single line'
+              exit 1
+            fi
             read -r -a custom_test_command <<< "$CUSTOM_TEST_COMMAND"
             "$RUNNER" run "${custom_test_command[@]}"
           elif grep -q '"test/ci":' package.json; then
