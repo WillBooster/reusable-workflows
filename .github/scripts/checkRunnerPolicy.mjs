@@ -16,7 +16,7 @@ for (const file of fs.readdirSync(".github/workflows").filter((name) => name.end
       ]),
     );
     const evaluate = (visibility, inputs) => {
-      if (!expression.startsWith("${{")) return expression;
+      if (typeof expression !== "string" || !expression.startsWith("${{")) return expression;
       const context = JSON.parse(
         JSON.stringify({
           github: { event: { repository: { private: visibility } } },
@@ -45,7 +45,7 @@ for (const file of fs.readdirSync(".github/workflows").filter((name) => name.end
         ]) {
           const labels = evaluate(visibility, { github_hosted_runner, runs_on });
           assert.ok(
-            (Array.isArray(labels) ? labels : [labels]).includes("self-hosted"),
+            [labels].flat().includes("self-hosted"),
             `${file}:${name} permits hosted runners with ${runs_on}`,
           );
           checked++;
