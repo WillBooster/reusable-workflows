@@ -17,12 +17,14 @@ on:
         required: false
         type: string
       github_hosted_runner:
+        description: Cannot override repository visibility; private repositories always use self-hosted runners.
         required: false
         type: boolean
       ignore_renovate:
         required: false
         type: boolean
       runs_on:
+        description: JSON runner labels. Private overrides must be arrays containing self-hosted; other overrides use the default self-hosted pool.
         required: false
         type: string
       skip_build:
@@ -69,7 +71,7 @@ jobs:
       # The default queue (`single`) cancels an already-pending run when another one queues,
       # silently dropping a release; keep every queued release.
       queue: max
-    runs-on: ${{ (inputs.runs_on && fromJSON(inputs.runs_on)) || ((!github.event.repository.private || inputs.github_hosted_runner) && 'ubuntu-latest') || fromJSON('["self-hosted", "medium"]') }}
+    runs-on: ${{ (inputs.runs_on && (toJSON(github.event.repository.private) == 'false' || (startsWith(inputs.runs_on, '[') && contains(fromJSON(inputs.runs_on), 'self-hosted'))) && fromJSON(inputs.runs_on)) || (toJSON(github.event.repository.private) == 'false' && 'ubuntu-latest') || fromJSON('["self-hosted", "medium"]') }}
     env:
       FORCE_COLOR: 3
       NODE_OPTIONS: --max-old-space-size=4096

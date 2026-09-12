@@ -6,6 +6,12 @@
 
 A collection of reusable workflows for GitHub Actions.
 
+## Runner policy
+
+Private callers always use self-hosted runners. `github_hosted_runner` remains accepted but cannot override repository visibility. A private caller's `runs_on` must be a JSON array containing `self-hosted`, for example `'["self-hosted","Linux","large"]'`; other valid JSON selections fall back to the workflow's self-hosted defaults. Invalid JSON can fail expression evaluation. Keep any required OS, size, or host labels in that array.
+
+Public callers default to `ubuntu-latest` and may override `runs_on`. Unknown visibility uses self-hosted defaults. `bun run test` evaluates the workflow expressions with GitHub's expression engine to check this policy; CI runs it alongside actionlint.
+
 ## Secrets contract for callers
 
 The four install-capable workflows (`test.yml`, `deploy.yml`, `release.yml`, `run-script.yml`) declare these optional secrets:
