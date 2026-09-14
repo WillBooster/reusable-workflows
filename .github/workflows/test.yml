@@ -3,6 +3,11 @@ name: Test
 on:
   workflow_call:
     inputs:
+      upload_test_log:
+        description: Upload raw test output (not secret-masked). Enable only when test output contains no secrets.
+        default: false
+        required: false
+        type: boolean
       artifact_path:
         required: false
         type: string
@@ -197,6 +202,7 @@ jobs:
       # self-hosted (see the rejection above), and hosted runs keep the default (an empty ref).
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.1
+        id: checkout
         with:
           persist-credentials: false
           ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
@@ -511,6 +517,7 @@ jobs:
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Test
+        id: test
         run: |
           if [[ "$HAS_TEST_COMMAND" == "true" ]]; then
             if [[ "$CUSTOM_TEST_COMMAND" == *$'\n'* ]]; then
@@ -518,18 +525,40 @@ jobs:
               exit 1
             fi
             read -r -a custom_test_command <<< "$CUSTOM_TEST_COMMAND"
-            "$RUNNER" run "${custom_test_command[@]}"
+            test_command=("$RUNNER" run "${custom_test_command[@]}")
           elif grep -q '"test/ci":' package.json; then
-            "$RUNNER" run test/ci
+            test_command=("$RUNNER" run test/ci)
           elif grep -q '"test":' package.json; then
-            "$RUNNER" run test
+            test_command=("$RUNNER" run test)
+          else
+            exit 0
           fi
+          if [[ "$UPLOAD_TEST_LOG" != "true" ]]; then
+            exec "${test_command[@]}"
+          fi
+          log_dir=$(mktemp -d "$RUNNER_TEMP/test-output.XXXXXX")
+          echo "log_path=$log_dir/test.log" >> "$GITHUB_OUTPUT"
+          # Keep draining test output when the log reaches a file-size limit.
+          set +e
+          "${test_command[@]}" 2>&1 | (trap '' XFSZ; tee "$log_dir/test.log")
+          test_status=("${PIPESTATUS[@]}")
+          if (( test_status[0] != 0 )); then exit "${test_status[0]}"; fi
+          exit "${test_status[1]}"
         env:
+          UPLOAD_TEST_LOG: ${{ inputs.upload_test_log }}
           CUSTOM_TEST_COMMAND: ${{ inputs.custom_test_command }}
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           RUNNER: ${{ steps.env-info.outputs.runner }}
+      - if: ${{ always() && inputs.upload_test_log && steps.test.outputs.log_path != '' }}
+        name: Upload test log
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: test-output-${{ runner.os }}-${{ matrix.node-version || 'pinned' }}-${{ job.check_run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.test.outputs.log_path }}
+          retention-days: 14
+          if-no-files-found: error
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run lint-staged
         run: |
@@ -571,10 +600,10 @@ jobs:
           # The dry run's npm invocations expand these tokens from the generated .npmrc.
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
+      - if: ${{ always() && steps.checkout.outcome == 'success' && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: test-artifact
+          name: test-artifact-${{ runner.os }}-${{ matrix.node-version || 'pinned' }}-${{ job.check_run_id }}-${{ github.run_attempt }}
           path: ${{ inputs.artifact_path }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path

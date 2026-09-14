@@ -40,3 +40,5 @@ Note: this repository is mirrored to `WillBoosterLab/reusable-workflows` with `o
 git rev-parse main
 gh api repos/WillBoosterLab/reusable-workflows/commits/main --jq '.commit.message | split("\n")[0]'
 ```
+
+The test workflow streams test output while preserving the test exit status. Local workflow log capture and upload are enabled together. Set `upload_test_log: true` only when test output contains no secrets: artifact files do not receive GitHub's console secret masking. This opt-in retains logs for 14 days after success or failure, with `test-output-<OS>-<Node>-<check-run-id>-<attempt>` names. Configured `artifact_path` uploads also run after failures, using matching `test-artifact-<OS>-<Node>-<check-run-id>-<attempt>` names. Node is `pinned` for a repository-managed version; the check-run ID distinguishes jobs and the attempt distinguishes reruns.
