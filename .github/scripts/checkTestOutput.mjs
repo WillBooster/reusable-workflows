@@ -42,15 +42,18 @@ try {
   });
   assert.notEqual(limited.status, 0, "A failed log write must fail successful tests");
   assert.match(limited.stderr, /File.*(size|limit)/i);
-  const directOutputs = path.join(root, "direct-outputs");
-  const direct = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], {
-    cwd: root,
-    env: { ...process.env, UPLOAD_TEST_LOG: "false", HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: path.join(root, "missing"), GITHUB_OUTPUT: directOutputs },
-    encoding: "utf8",
-  });
-  assert.equal(direct.status, 0, direct.stderr);
-  assert.equal(direct.stdout.length, 4096);
-  assert.equal(await Bun.file(directOutputs).exists(), false, "Opted-out runs must not allocate logs");
+  for (const code of [0, 7]) {
+    await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: `printf '%4096s' x; exit ${code}` } }));
+    const directOutputs = path.join(root, "direct-outputs");
+    const direct = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], {
+      cwd: root,
+      env: { ...process.env, UPLOAD_TEST_LOG: "false", HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: path.join(root, "missing"), GITHUB_OUTPUT: directOutputs },
+      encoding: "utf8",
+    });
+    assert.equal(direct.status, code, direct.stderr);
+    assert.equal(direct.stdout.length, 4096);
+    assert.equal(await Bun.file(directOutputs).exists(), false, "Opted-out runs must not allocate logs");
+  }
   const nameScript = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []).find((step) => step.id === "configured-artifact").run;
   for (const tempExists of [true, false]) {
     const naming = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", nameScript], {
