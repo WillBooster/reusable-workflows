@@ -202,6 +202,7 @@ jobs:
       # self-hosted (see the rejection above), and hosted runs keep the default (an empty ref).
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         uses: actions/checkout@v7.0.1
+        id: checkout
         with:
           persist-credentials: false
           ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
@@ -599,7 +600,7 @@ jobs:
           # The dry run's npm invocations expand these tokens from the generated .npmrc.
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
-      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
+      - if: ${{ always() && steps.checkout.outcome == 'success' && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         name: Name configured artifact
         id: configured-artifact
         run: |
