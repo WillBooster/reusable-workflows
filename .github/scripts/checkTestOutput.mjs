@@ -30,14 +30,18 @@ try {
       }
     }
   }
-  await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "printf '%4096s' x" } }));
-  const limited = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", `ulimit -f 1\n${script}`], {
-    cwd: root,
-    env: { ...process.env, UPLOAD_TEST_LOG: "true", HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: root, GITHUB_OUTPUT: path.join(root, "limited-outputs") },
-    encoding: "utf8",
-  });
-  assert.notEqual(limited.status, 0, "A failed log write must fail successful tests");
-  assert.match(limited.stderr, /File.*(size|limit)/i);
+  for (const code of [0, 7]) {
+    await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: `node emit.cjs ${code}` } }));
+    const limited = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", `ulimit -f 1\n${script}`], {
+      cwd: root,
+      env: { ...process.env, UPLOAD_TEST_LOG: "true", HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: root, GITHUB_OUTPUT: path.join(root, `limited-outputs-${code}`) },
+      encoding: "utf8",
+      maxBuffer: 3 * 1024 * 1024,
+    });
+    assert.equal(limited.status, code || 1, limited.stderr);
+    assert.equal(limited.stdout.split("stdout-evidence").length - 1, 50_000);
+    assert.match(limited.stderr, /File.*(size|limit|large)/i);
+  }
   for (const code of [0, 7]) {
     await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: `printf '%4096s' x; exit ${code}` } }));
     const directOutputs = path.join(root, "direct-outputs");
