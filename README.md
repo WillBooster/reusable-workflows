@@ -40,3 +40,5 @@ Note: this repository is mirrored to `WillBoosterLab/reusable-workflows` with `o
 git rev-parse main
 gh api repos/WillBoosterLab/reusable-workflows/commits/main --jq '.commit.message | split("\n")[0]'
 ```
+
+The test workflow streams test output and saves a complete log as a uniquely named `test-output.*` artifact for 14 days, including failed tests and custom test commands. Configured `artifact_path` uploads also run after failures.

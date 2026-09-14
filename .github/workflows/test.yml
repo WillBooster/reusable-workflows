@@ -511,6 +511,7 @@ jobs:
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Test
+        id: test
         run: |
           if [[ "$HAS_TEST_COMMAND" == "true" ]]; then
             if [[ "$CUSTOM_TEST_COMMAND" == *$'\n'* ]]; then
@@ -518,18 +519,35 @@ jobs:
               exit 1
             fi
             read -r -a custom_test_command <<< "$CUSTOM_TEST_COMMAND"
-            "$RUNNER" run "${custom_test_command[@]}"
+            test_command=("$RUNNER" run "${custom_test_command[@]}")
           elif grep -q '"test/ci":' package.json; then
-            "$RUNNER" run test/ci
+            test_command=("$RUNNER" run test/ci)
           elif grep -q '"test":' package.json; then
-            "$RUNNER" run test
+            test_command=("$RUNNER" run test)
+          else
+            exit 0
           fi
+          log_dir=$(mktemp -d "$RUNNER_TEMP/test-output.XXXXXX")
+          echo "log_path=$log_dir/test.log" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$(basename "$log_dir")" >> "$GITHUB_OUTPUT"
+          set +e
+          "${test_command[@]}" 2>&1 | tee "$log_dir/test.log"
+          test_exit=${PIPESTATUS[0]}
+          exit "$test_exit"
         env:
           CUSTOM_TEST_COMMAND: ${{ inputs.custom_test_command }}
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           RUNNER: ${{ steps.env-info.outputs.runner }}
+      - if: ${{ always() && steps.test.outputs.log_path != '' }}
+        name: Upload test log
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ steps.test.outputs.artifact_name }}
+          path: ${{ steps.test.outputs.log_path }}
+          retention-days: 14
+          if-no-files-found: warn
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run lint-staged
         run: |
@@ -571,7 +589,7 @@ jobs:
           # The dry run's npm invocations expand these tokens from the generated .npmrc.
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
+      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         uses: actions/upload-artifact@v7.0.1
         with:
           name: test-artifact
