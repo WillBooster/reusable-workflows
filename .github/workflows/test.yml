@@ -532,6 +532,9 @@ jobs:
           else
             exit 0
           fi
+          if [[ "$UPLOAD_TEST_LOG" != "true" ]]; then
+            exec "${test_command[@]}"
+          fi
           log_dir=$(mktemp -d "$RUNNER_TEMP/test-output.XXXXXX")
           echo "log_path=$log_dir/test.log" >> "$GITHUB_OUTPUT"
           echo "artifact_name=$(basename "$log_dir")-$RUNNER_OS-$(node --version)" >> "$GITHUB_OUTPUT"
@@ -541,6 +544,7 @@ jobs:
           if (( test_status[0] != 0 )); then exit "${test_status[0]}"; fi
           exit "${test_status[1]}"
         env:
+          UPLOAD_TEST_LOG: ${{ inputs.upload_test_log }}
           CUSTOM_TEST_COMMAND: ${{ inputs.custom_test_command }}
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
@@ -598,7 +602,11 @@ jobs:
       - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         name: Name configured artifact
         id: configured-artifact
-        run: echo "name=$(basename "$(mktemp "$RUNNER_TEMP/test-artifact.XXXXXX")")" >> "$GITHUB_OUTPUT"
+        run: |
+          artifact_path=$(mktemp "$RUNNER_TEMP/test-artifact.XXXXXX")
+          echo "name=$(basename "$artifact_path")-$RUNNER_OS-$ARTIFACT_NODE_VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          ARTIFACT_NODE_VERSION: ${{ matrix.node-version || 'pinned' }}
       - if: ${{ always() && steps.configured-artifact.outputs.name != '' }}
         uses: actions/upload-artifact@v7.0.1
         with:

@@ -17,7 +17,7 @@ try {
       await fs.writeFile(outputPath, "");
       const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], {
         cwd: root,
-        env: { ...process.env, HAS_TEST_COMMAND: String(command === "custom"), CUSTOM_TEST_COMMAND: command, RUNNER: "bun", RUNNER_TEMP: root, GITHUB_OUTPUT: outputPath },
+        env: { ...process.env, UPLOAD_TEST_LOG: "true", HAS_TEST_COMMAND: String(command === "custom"), CUSTOM_TEST_COMMAND: command, RUNNER: "bun", RUNNER_TEMP: root, GITHUB_OUTPUT: outputPath },
         encoding: "utf8",
         maxBuffer: 2 * 1024 * 1024,
       });
@@ -37,11 +37,28 @@ try {
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "printf '%4096s' x" } }));
   const limited = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", `ulimit -f 1\n${script}`], {
     cwd: root,
-    env: { ...process.env, HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: root, GITHUB_OUTPUT: path.join(root, "limited-outputs") },
+    env: { ...process.env, UPLOAD_TEST_LOG: "true", HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: root, GITHUB_OUTPUT: path.join(root, "limited-outputs") },
     encoding: "utf8",
   });
   assert.notEqual(limited.status, 0, "A failed log write must fail successful tests");
   assert.match(limited.stderr, /File.*(size|limit)/i);
+  const directOutputs = path.join(root, "direct-outputs");
+  const direct = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], {
+    cwd: root,
+    env: { ...process.env, UPLOAD_TEST_LOG: "false", HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: path.join(root, "missing"), GITHUB_OUTPUT: directOutputs },
+    encoding: "utf8",
+  });
+  assert.equal(direct.status, 0, direct.stderr);
+  assert.equal(direct.stdout.length, 4096);
+  assert.equal(await Bun.file(directOutputs).exists(), false, "Opted-out runs must not allocate logs");
+  const nameScript = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []).find((step) => step.id === "configured-artifact").run;
+  for (const tempExists of [true, false]) {
+    const naming = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", nameScript], {
+      env: { ...process.env, RUNNER_TEMP: tempExists ? root : path.join(root, "missing"), GITHUB_OUTPUT: path.join(root, "name-outputs") },
+      encoding: "utf8",
+    });
+    assert.equal(naming.status === 0, tempExists, naming.stderr);
+  }
   console.log("Test workflow preserves complete logs and exit codes for default and custom commands.");
 } finally {
   await fs.rm(root, { recursive: true, force: true });
