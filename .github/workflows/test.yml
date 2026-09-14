@@ -3,6 +3,11 @@ name: Test
 on:
   workflow_call:
     inputs:
+      upload_test_log:
+        description: Upload raw test output (not secret-masked). Enable only when test output contains no secrets.
+        default: false
+        required: false
+        type: boolean
       artifact_path:
         required: false
         type: string
@@ -529,7 +534,7 @@ jobs:
           fi
           log_dir=$(mktemp -d "$RUNNER_TEMP/test-output.XXXXXX")
           echo "log_path=$log_dir/test.log" >> "$GITHUB_OUTPUT"
-          echo "artifact_name=$(basename "$log_dir")" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$(basename "$log_dir")-$RUNNER_OS-$(node --version)" >> "$GITHUB_OUTPUT"
           set +e
           "${test_command[@]}" 2>&1 | tee "$log_dir/test.log"
           test_exit=${PIPESTATUS[0]}
@@ -540,7 +545,7 @@ jobs:
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           RUNNER: ${{ steps.env-info.outputs.runner }}
-      - if: ${{ always() && steps.test.outputs.log_path != '' }}
+      - if: ${{ always() && inputs.upload_test_log && steps.test.outputs.log_path != '' }}
         name: Upload test log
         uses: actions/upload-artifact@v7.0.1
         with:

@@ -41,4 +41,4 @@ git rev-parse main
 gh api repos/WillBoosterLab/reusable-workflows/commits/main --jq '.commit.message | split("\n")[0]'
 ```
 
-The test workflow streams test output and saves a complete log as a uniquely named `test-output.*` artifact for 14 days, including failed tests and custom test commands. Configured `artifact_path` uploads also run after failures, using unique `test-artifact.*` names.
+The test workflow streams test output and saves a local log while preserving the test exit status. Set `upload_test_log: true` only when test output contains no secrets: artifact files do not receive GitHub's console secret masking. This opt-in retains logs for 14 days after success or failure, with unique `test-output.*` names including OS and Node version. Configured `artifact_path` uploads also run after failures, using unique `test-artifact.*` names.
