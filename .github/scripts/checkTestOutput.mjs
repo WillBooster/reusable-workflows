@@ -8,7 +8,7 @@ const script = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []).fi
 await fs.mkdir(".tmp", { recursive: true });
 const root = await fs.mkdtemp(path.resolve(".tmp/test-output-"));
 try {
-  await fs.writeFile(path.join(root, "emit.cjs"), "require('node:fs').writeFileSync(1, 'evidence\\n'.repeat(100_000)); process.exit(Number(process.argv[2]));");
+  await fs.writeFile(path.join(root, "emit.cjs"), "require('node:fs').writeFileSync(1, 'stdout-evidence\\n'.repeat(50_000)); require('node:fs').writeFileSync(2, 'stderr-evidence\\n'.repeat(50_000)); process.exit(Number(process.argv[2]));");
   const names = new Set();
   for (const command of ["test", "test/ci", "custom"]) {
     for (const code of [0, 7]) {
@@ -27,8 +27,11 @@ try {
       const name = outputs.match(/^artifact_name=(.+)$/m)[1];
       assert.ok(!names.has(name), "Artifact names collide between invocations");
       names.add(name);
-      assert.equal((await fs.readFile(logPath, "utf8")).match(/evidence/g).length, 100_000);
-      assert.equal(result.stdout.match(/evidence/g).length, 100_000);
+      const log = await fs.readFile(logPath, "utf8");
+      for (const marker of ["stdout-evidence", "stderr-evidence"]) {
+        assert.equal(log.split(marker).length - 1, 50_000);
+        assert.equal(result.stdout.split(marker).length - 1, 50_000);
+      }
     }
   }
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "printf '%4096s' x" } }));
