@@ -31,6 +31,14 @@ try {
       assert.equal(result.stdout.match(/evidence/g).length, 100_000);
     }
   }
+  await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "printf '%4096s' x" } }));
+  const limited = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", `ulimit -f 1\n${script}`], {
+    cwd: root,
+    env: { ...process.env, HAS_TEST_COMMAND: "false", RUNNER: "bun", RUNNER_TEMP: root, GITHUB_OUTPUT: path.join(root, "limited-outputs") },
+    encoding: "utf8",
+  });
+  assert.notEqual(limited.status, 0, "A failed log write must fail successful tests");
+  assert.match(limited.stderr, /File.*(size|limit)/i);
   console.log("Test workflow preserves complete logs and exit codes for default and custom commands.");
 } finally {
   await fs.rm(root, { recursive: true, force: true });

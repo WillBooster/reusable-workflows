@@ -537,8 +537,9 @@ jobs:
           echo "artifact_name=$(basename "$log_dir")-$RUNNER_OS-$(node --version)" >> "$GITHUB_OUTPUT"
           set +e
           "${test_command[@]}" 2>&1 | tee "$log_dir/test.log"
-          test_exit=${PIPESTATUS[0]}
-          exit "$test_exit"
+          test_status=("${PIPESTATUS[@]}")
+          if (( test_status[0] != 0 )); then exit "${test_status[0]}"; fi
+          exit "${test_status[1]}"
         env:
           CUSTOM_TEST_COMMAND: ${{ inputs.custom_test_command }}
           # Consumer scripts load env vars through wb/fnox (step-scoped; see the fnox check step above).
@@ -552,7 +553,7 @@ jobs:
           name: ${{ steps.test.outputs.artifact_name }}
           path: ${{ steps.test.outputs.log_path }}
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run lint-staged
         run: |
