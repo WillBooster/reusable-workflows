@@ -538,7 +538,6 @@ jobs:
           fi
           log_dir=$(mktemp -d "$RUNNER_TEMP/test-output.XXXXXX")
           echo "log_path=$log_dir/test.log" >> "$GITHUB_OUTPUT"
-          echo "artifact_name=$(basename "$log_dir")-$RUNNER_OS-$(node --version)" >> "$GITHUB_OUTPUT"
           set +e
           "${test_command[@]}" 2>&1 | tee "$log_dir/test.log"
           test_status=("${PIPESTATUS[@]}")
@@ -555,7 +554,7 @@ jobs:
         name: Upload test log
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: ${{ steps.test.outputs.artifact_name }}
+          name: test-output-${{ runner.os }}-${{ matrix.node-version || 'pinned' }}-${{ job.check_run_id }}-${{ github.run_attempt }}
           path: ${{ steps.test.outputs.log_path }}
           retention-days: 14
           if-no-files-found: error
@@ -601,17 +600,9 @@ jobs:
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       - if: ${{ always() && steps.checkout.outcome == 'success' && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
-        name: Name configured artifact
-        id: configured-artifact
-        run: |
-          artifact_path=$(mktemp "$RUNNER_TEMP/test-artifact.XXXXXX")
-          echo "name=$(basename "$artifact_path")-$RUNNER_OS-$ARTIFACT_NODE_VERSION" >> "$GITHUB_OUTPUT"
-        env:
-          ARTIFACT_NODE_VERSION: ${{ matrix.node-version || 'pinned' }}
-      - if: ${{ always() && steps.configured-artifact.outputs.name != '' }}
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: ${{ steps.configured-artifact.outputs.name }}
+          name: test-artifact-${{ runner.os }}-${{ matrix.node-version || 'pinned' }}-${{ job.check_run_id }}-${{ github.run_attempt }}
           path: ${{ inputs.artifact_path }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
