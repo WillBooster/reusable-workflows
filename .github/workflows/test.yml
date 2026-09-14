@@ -590,9 +590,13 @@ jobs:
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
+        name: Name configured artifact
+        id: configured-artifact
+        run: echo "name=$(basename "$(mktemp "$RUNNER_TEMP/test-artifact.XXXXXX")")" >> "$GITHUB_OUTPUT"
+      - if: ${{ always() && steps.configured-artifact.outputs.name != '' }}
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: test-artifact
+          name: ${{ steps.configured-artifact.outputs.name }}
           path: ${{ inputs.artifact_path }}
 
       # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
