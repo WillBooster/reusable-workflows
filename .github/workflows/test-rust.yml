@@ -76,9 +76,11 @@ jobs:
       # pull in a crate published minutes ago, and the build below would run its build scripts on this
       # runner. Merge a fix that cannot wait 7 days by bypassing the ruleset. The line-based parser is
       # sound only for the format cargo writes, so the PR's lockfile must use exactly that format: cargo
-      # also accepts other TOML spellings (e.g. `source="..."`, trailing comments) that the parser would
-      # skip. `cargo metadata` is no substitute, since it omits entries for inactive optional
-      # dependencies. The base lockfile is trusted, and entries missed there only widen the check.
+      # also accepts other TOML spellings (e.g. `source="..."`, trailing comments) and other spellings of
+      # the crates.io source (e.g. a trailing `/`) that the parser would skip. Only crates.io and git
+      # sources are allowed, since no organization repository uses another registry. `cargo metadata` is
+      # no substitute, since it omits entries for inactive optional dependencies. The base lockfile is
+      # trusted, and entries missed there only widen the check.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event_name == 'pull_request' }}
         name: Reject crates.io versions published less than 7 days ago
         timeout-minutes: 15
@@ -87,7 +89,7 @@ jobs:
           MIN_AGE_DAYS: 7
         run: |
           if [[ ! -f Cargo.lock ]] || git show HEAD^1:./Cargo.lock 2> /dev/null | cmp -s - Cargo.lock; then exit 0; fi
-          if awk '!/^$/ && !/^#/ && !/^(version = [0-9]+|\[\[(package|patch\.unused)\]\]|(name|version|source|checksum|replace) = "[^"\\]*"|dependencies = \[| "[^"\\]*",|\])$/ { print "::error::Cargo.lock line " NR " is not in the format cargo writes; regenerate the lockfile with cargo."; bad = 1 } END { exit !bad }' Cargo.lock; then
+          if awk '!/^$/ && !/^#/ && !/^(version = [0-9]+|\[\[(package|patch\.unused)\]\]|(name|version|checksum|replace) = "[^"\\]*"|source = "(registry\+https:\/\/github\.com\/rust-lang\/crates\.io-index|sparse\+https:\/\/index\.crates\.io\/|git\+[^"\\]*)"|dependencies = \[| "[^"\\]*",|\])$/ { print "::error::Cargo.lock line " NR " is not in the format cargo writes or names a source other than crates.io or git; regenerate the lockfile with cargo."; bad = 1 } END { exit !bad }' Cargo.lock; then
             exit 1
           fi
           crates_io_packages() {
