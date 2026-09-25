@@ -97,11 +97,10 @@ jobs:
               3) index_path="3/${lower:0:1}/$lower" ;;
               *) index_path="${lower:0:2}/${lower:2:2}/$lower" ;;
             esac
-            # Versions published before crates.io started recording pubtime have none and are old enough.
             age_days="$(curl --fail --show-error --silent --retry 5 "https://index.crates.io/$index_path" |
-              jq -r --arg version "$version" 'select(.vers == $version) | if .pubtime then (now - (.pubtime | fromdateiso8601)) / 86400 | floor else 1e9 end')"
+              jq -r --arg version "$version" 'select(.vers == $version and .pubtime) | (now - (.pubtime | fromdateiso8601)) / 86400 | floor')"
             if [[ -z "$age_days" ]]; then
-              echo "::error::$name $version is not in the crates.io index."
+              echo "::error::$name $version has no publish time in the crates.io index."
               failed=1
             elif (( age_days < MIN_AGE_DAYS )); then
               echo "::error::$name $version was published $age_days day(s) ago; crates.io versions must be at least $MIN_AGE_DAYS days old. Re-run this job once it is."
