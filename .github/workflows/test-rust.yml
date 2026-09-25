@@ -97,7 +97,7 @@ jobs:
               3) index_path="3/${lower:0:1}/$lower" ;;
               *) index_path="${lower:0:2}/${lower:2:2}/$lower" ;;
             esac
-            if ! index_entries="$(curl --fail --show-error --silent --retry 5 "https://index.crates.io/$index_path")"; then
+            if ! index_entries="$(curl --connect-timeout 10 --max-time 60 --fail --show-error --silent --retry 5 "https://index.crates.io/$index_path")"; then
               echo "::error::Could not fetch $name from the crates.io index (unknown crate or network error); re-run this job if the error was transient."
               failed=1
               continue
