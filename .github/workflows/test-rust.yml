@@ -97,10 +97,14 @@ jobs:
               3) index_path="3/${lower:0:1}/$lower" ;;
               *) index_path="${lower:0:2}/${lower:2:2}/$lower" ;;
             esac
-            age_days="$(curl --fail --show-error --silent --retry 5 "https://index.crates.io/$index_path" |
-              jq -r --arg version "$version" 'select(.vers == $version and .pubtime) | (now - (.pubtime | fromdateiso8601)) / 86400 | floor')"
+            if ! index_entries="$(curl --fail --show-error --silent --retry 5 "https://index.crates.io/$index_path")"; then
+              echo "::error::Could not fetch $name from the crates.io index (unknown crate or network error); re-run this job if the error was transient."
+              failed=1
+              continue
+            fi
+            age_days="$(jq -r --arg version "$version" 'select(.vers == $version and .pubtime) | (now - (.pubtime | fromdateiso8601)) / 86400 | floor' <<< "$index_entries")"
             if [[ -z "$age_days" ]]; then
-              echo "::error::$name $version has no publish time in the crates.io index."
+              echo "::error::$name $version is not in the crates.io index with a publish time."
               failed=1
             elif (( age_days < MIN_AGE_DAYS )); then
               echo "::error::$name $version was published $age_days day(s) ago; crates.io versions must be at least $MIN_AGE_DAYS days old. Re-run this job once it is."
