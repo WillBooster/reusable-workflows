@@ -72,33 +72,13 @@ jobs:
           # The pull-request merge commit's first parent (HEAD^1) is the base the Cargo.lock gate diffs against.
           fetch-depth: 2
           persist-credentials: false
-      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
-        name: Set up rustup
-        # Self-hosted runners may not have rustup; install it once into the persistent home directory.
-        run: |
-          if ! command -v rustup > /dev/null && [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
-            curl --proto '=https' --tlsv1.2 --fail --show-error --silent https://sh.rustup.rs | sh -s -- -y --default-toolchain none --no-modify-path
-          fi
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
-        name: Install Rust toolchain
-        working-directory: ${{ inputs.working_directory }}
-        run: |
-          # rust-toolchain(.toml) should pin a concrete toolchain so builds don't drift across runs.
-          if [[ -f rust-toolchain.toml || -f rust-toolchain ]]; then
-            rustup toolchain install
-          else
-            echo '::warning::No rust-toolchain(.toml) found; falling back to the latest stable toolchain.'
-            rustup toolchain install stable --profile minimal
-            rustup default stable
-          fi
-          rustup show
       # Cargo's resolver has no minimum-publish-age gate before Rust 1.100, so a lockfile update can
       # pull in a crate published minutes ago, and the build below would run its build scripts on this
-      # runner. Merge a fix that cannot wait 7 days by bypassing the ruleset. The PR's packages come from
-      # `cargo metadata` (which runs no crate code) because a line-based parser misses TOML-equivalent
-      # spellings that cargo accepts; the base lockfile is trusted, and awk missing its entries only
-      # widens the check.
+      # runner. Merge a fix that cannot wait 7 days by bypassing the ruleset. The line-based parser is
+      # sound only for the format cargo writes, so the PR's lockfile must use exactly that format: cargo
+      # also accepts other TOML spellings (e.g. `source="..."`, trailing comments) that the parser would
+      # skip. `cargo metadata` is no substitute, since it omits entries for inactive optional
+      # dependencies. The base lockfile is trusted, and entries missed there only widen the check.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event_name == 'pull_request' }}
         name: Reject crates.io versions published less than 7 days ago
         timeout-minutes: 15
@@ -107,7 +87,15 @@ jobs:
           MIN_AGE_DAYS: 7
         run: |
           if [[ ! -f Cargo.lock ]] || git show HEAD^1:./Cargo.lock 2> /dev/null | cmp -s - Cargo.lock; then exit 0; fi
-          metadata="$(cargo metadata --locked --format-version 1)"
+          if awk '!/^$/ && !/^#/ && !/^(version = [0-9]+|\[\[package\]\]|(name|version|source|checksum) = "[^"\\]*"|dependencies = \[| "[^"\\]*",|\])$/ { print "::error::Cargo.lock line " NR " is not in the format cargo writes; regenerate the lockfile with cargo."; bad = 1 } END { exit !bad }' Cargo.lock; then
+            exit 1
+          fi
+          crates_io_packages() {
+            awk '/^\[\[package\]\]/ { name = ""; version = "" }
+              /^name = / { name = $3 } /^version = / { version = $3 }
+              $0 == "source = \"registry+https://github.com/rust-lang/crates.io-index\"" || $0 == "source = \"sparse+https://index.crates.io/\"" { print name, version }' |
+              tr -d '"' | sort -u
+          }
           failed=0
           while read -r name version; do
             lower="$(tr '[:upper:]' '[:lower:]' <<< "$name")"
@@ -130,14 +118,29 @@ jobs:
               echo "::error::$name $version was published $age_days day(s) ago; crates.io versions must be at least $MIN_AGE_DAYS days old. Re-run this job once it is."
               failed=1
             fi
-          done < <(comm -13 \
-            <(git show HEAD^1:./Cargo.lock 2> /dev/null |
-              awk '/^\[\[package\]\]/ { name = ""; version = "" }
-                /^name = / { name = $3 } /^version = / { version = $3 }
-                $0 == "source = \"registry+https://github.com/rust-lang/crates.io-index\"" || $0 == "source = \"sparse+https://index.crates.io/\"" { print name, version }' |
-              tr -d '"' | sort -u) \
-            <(jq -r '.packages[] | select(.source == "registry+https://github.com/rust-lang/crates.io-index" or .source == "sparse+https://index.crates.io/") | "\(.name) \(.version)"' <<< "$metadata" | sort -u))
+          done < <(comm -13 <(git show HEAD^1:./Cargo.lock 2> /dev/null | crates_io_packages) <(crates_io_packages < Cargo.lock))
           exit "$failed"
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Set up rustup
+        # Self-hosted runners may not have rustup; install it once into the persistent home directory.
+        run: |
+          if ! command -v rustup > /dev/null && [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
+            curl --proto '=https' --tlsv1.2 --fail --show-error --silent https://sh.rustup.rs | sh -s -- -y --default-toolchain none --no-modify-path
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - if: ${{ needs.pre.outputs.should_skip != 'true' }}
+        name: Install Rust toolchain
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          # rust-toolchain(.toml) should pin a concrete toolchain so builds don't drift across runs.
+          if [[ -f rust-toolchain.toml || -f rust-toolchain ]]; then
+            rustup toolchain install
+          else
+            echo '::warning::No rust-toolchain(.toml) found; falling back to the latest stable toolchain.'
+            rustup toolchain install stable --profile minimal
+            rustup default stable
+          fi
+          rustup show
       - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.os == 'Linux' }}
         name: Install Tauri system dependencies
         working-directory: ${{ inputs.working_directory }}
