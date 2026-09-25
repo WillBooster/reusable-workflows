@@ -101,11 +101,12 @@ jobs:
       # widens the check.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event_name == 'pull_request' }}
         name: Reject crates.io versions published less than 7 days ago
+        timeout-minutes: 15
         working-directory: ${{ inputs.working_directory }}
         env:
           MIN_AGE_DAYS: 7
         run: |
-          if [[ ! -f Cargo.lock ]]; then exit 0; fi
+          if [[ ! -f Cargo.lock ]] || git show HEAD^1:./Cargo.lock 2> /dev/null | cmp -s - Cargo.lock; then exit 0; fi
           metadata="$(cargo metadata --locked --format-version 1)"
           failed=0
           while read -r name version; do
