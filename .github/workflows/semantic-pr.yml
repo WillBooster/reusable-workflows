@@ -48,7 +48,7 @@ jobs:
 
           async function main() {
             const title = await fetchTitle();
-            console.log(`PR title: ${title}`);
+            console.log(`PR title: ${escapeCommand(title)}`);
             const errors = validateTitle(title);
             for (const error of errors) reportError(error);
             if (errors.length === 0) console.log('The PR title is valid.');
@@ -70,7 +70,9 @@ jobs:
 
           function validateTitle(title) {
             const errors = [];
-            const [, type, , subject] = HEADER_PATTERNS.map((pattern) => title.match(pattern)).find(Boolean) ?? [];
+            // Like conventional-commits-parser, parse only the first line as the header.
+            const header = title.replace(/^[\r\n]+|[\r\n]+$/g, '').split(/\r?\n/)[0];
+            const [, type, , subject] = HEADER_PATTERNS.map((pattern) => header.match(pattern)).find(Boolean) ?? [];
             const availableTypes = Object.entries(TYPES).map(([name, description]) => ` - ${name}: ${description}`).join('\n');
             if (!type) {
               errors.push(
@@ -92,7 +94,11 @@ jobs:
           }
 
           function reportError(message) {
-            const escaped = message.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
-            console.log(`::error::${escaped}`);
+            console.log(`::error::${escapeCommand(message)}`);
             process.exitCode = 1;
+          }
+
+          // Keeps untrusted text on one stdout line so the runner cannot parse it as a workflow command.
+          function escapeCommand(text) {
+            return text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
           }
