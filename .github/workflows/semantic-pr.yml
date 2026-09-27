@@ -20,5 +20,6 @@ jobs:
           # PR titles become the squash commit messages, which WillBooster writes in English.
           subjectPattern: '^[^\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]+$'
           subjectPatternError: 'The subject "{subject}" contains Japanese characters. Write the PR title in English.'
+          disallowScopes: '.*[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef].*'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
