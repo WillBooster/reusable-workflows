@@ -42,13 +42,19 @@ jobs:
           const JAPANESE_CHARACTERS =
             /[\u{2E80}-\u{33FF}\u{3400}-\u{9FFF}\u{F900}-\u{FAFF}\u{FE10}-\u{FE1F}\u{FE30}-\u{FE6F}\u{FF00}-\u{FFEF}\u{1AC00}-\u{1B3FF}\u{20000}-\u{3FFFF}]/gu;
 
-          main().catch((error) => {
-            reportError(error.message);
-          });
+          // `shell: node` runs the machine's PATH node, not the runner's bundled one.
+          if (typeof fetch === 'function') {
+            main().catch((error) => {
+              reportError(error.message);
+            });
+          } else {
+            reportError(`This step requires Node.js 18 or later on PATH, but found ${process.version} at ${process.execPath}.`);
+          }
 
           async function main() {
+            // The title is printed only inside `::error::` data: the runner also parses legacy `##[command]`
+            // markers anywhere in a bare line, so an untrusted title must not be logged on its own line.
             const title = await fetchTitle();
-            console.log(`PR title: ${escapeCommand(title)}`);
             const errors = validateTitle(title);
             for (const error of errors) reportError(error);
             if (errors.length === 0) console.log('The PR title is valid.');
@@ -98,7 +104,7 @@ jobs:
             process.exitCode = 1;
           }
 
-          // Keeps untrusted text on one stdout line so the runner cannot parse it as a workflow command.
+          // Keeps untrusted text on the command's line so its line breaks cannot start another workflow command.
           function escapeCommand(text) {
             return text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
           }
