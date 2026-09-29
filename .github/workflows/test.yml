@@ -51,6 +51,9 @@ on:
         required: false
       GH_TOKEN:
         required: true
+      RAILWAY_API_TOKEN:
+        description: Railway API token for the caller's deploy-test script (used to plan infrastructure changes without deploying)
+        required: false
       TAKUMI_GUARD_TOKEN:
         description: auth token for the Takumi Guard malicious-package-blocking registry proxy (used to generate registry configs)
         required: false
@@ -600,6 +603,20 @@ jobs:
           # The dry run's npm invocations expand these tokens from the generated .npmrc.
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
+      # The deploy-test script validates the deployment configuration against the live platform
+      # (e.g. an infrastructure-as-code plan) without deploying. It does not depend on the Node.js
+      # version, so only the first matrix leg queries the platform.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event_name == 'pull_request' && strategy.job-index == 0 }}
+        name: Test deploy script
+        run: |
+          if grep -q '"deploy-test":' package.json; then
+            ${{ steps.env-info.outputs.runner }} run deploy-test
+          fi
+        env:
+          # The consumer deploy-test script may load env vars through wb/fnox (step-scoped;
+          # see the fnox check step above).
+          FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       - if: ${{ always() && steps.checkout.outcome == 'success' && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
         uses: actions/upload-artifact@v7.0.1
         with:
