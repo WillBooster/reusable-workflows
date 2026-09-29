@@ -605,8 +605,10 @@ jobs:
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # The deploy-test script validates the deployment configuration against the live platform
       # (e.g. an infrastructure-as-code plan) without deploying. It does not depend on the Node.js
-      # version, so only the first matrix leg queries the platform.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event_name == 'pull_request' && strategy.job-index == 0 }}
+      # version, so only the first matrix leg queries the platform. Fork pull requests receive no
+      # secrets, so they skip it; same-repository runs without the token fail loudly instead, since
+      # a caller defining deploy-test must pass it.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && strategy.job-index == 0 }}
         name: Test deploy script
         run: |
           if grep -q '"deploy-test":' package.json; then
