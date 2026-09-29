@@ -88,7 +88,7 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         env:
           MIN_AGE_DAYS: 7
-          EXCLUDED_CRATES: willbooster-tree-sitter-kotlin
+          EXCLUDED_CRATES: willbooster-tree-sitter willbooster-tree-sitter-c willbooster-tree-sitter-c-sharp willbooster-tree-sitter-cpp willbooster-tree-sitter-javascript willbooster-tree-sitter-kotlin willbooster-tree-sitter-rust willbooster-tree-sitter-typescript
         run: |
           if [[ ! -f Cargo.lock ]] || git show HEAD^1:./Cargo.lock 2> /dev/null | cmp -s - Cargo.lock; then exit 0; fi
           if awk '!/^$/ && !/^#/ && !/^(version = [0-9]+|\[\[(package|patch\.unused)\]\]|(name|version|checksum|replace) = "[^"\\]*"|source = "(registry\+https:\/\/github\.com\/rust-lang\/crates\.io-index|sparse\+https:\/\/index\.crates\.io\/|git\+[^"\\]*)"|dependencies = \[| "[^"\\]*",|\])$/ { print "::error::Cargo.lock line " NR " is not in the format cargo writes or names a source other than crates.io or git; regenerate the lockfile with cargo."; bad = 1 } END { exit !bad }' Cargo.lock; then
