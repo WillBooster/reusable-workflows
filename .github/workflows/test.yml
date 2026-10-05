@@ -209,6 +209,42 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
+      # The code-gauge report near the end of the job needs the merge-base to be an ancestor of
+      # HEAD in the local history, while the shallow checkout holds only the pull-request merge
+      # commit (hosted) or the head branch tip (self-hosted). The compare API names the merge-base
+      # and how many commits HEAD is ahead of the base branch, which bounds the depth that
+      # reaches it. --shallow-exclude would fetch less but leaves a broken shallow repository
+      # when a commit merging the base branch is fetched, which the hosted HEAD always is. The
+      # checkout persists no credentials, so the job token (read-only on fork pull requests,
+      # which suffices) authenticates explicitly; that is why this runs here, before any code of
+      # the pull request does: a process such code leaves behind could read the token from this
+      # step's command lines. A failure only costs the report, so it never fails the job.
+      - if: ${{ steps.checkout.outcome == 'success' && github.event_name == 'pull_request' && strategy.job-index == 0 }}
+        name: Fetch the merge-base for code-gauge
+        id: code-gauge-base
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          if ! grep -qs '"@willbooster/wb":' package.json; then
+            exit 0
+          fi
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$JOB_TOKEN" | base64 | tr -d '\n')"
+          head=$(git rev-parse HEAD)
+          read -r base depth < <(
+            curl --fail --show-error --silent --retry 3 -H "$auth" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/compare/$(jq -rn --arg ref "$BASE_REF" '$ref | @uri')...$head?per_page=1&page=2" |
+              jq -r '"\(.merge_base_commit.sha) \(.ahead_by + 1)"'
+          ) &&
+            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$GITHUB_SERVER_URL/.extraheader" GIT_CONFIG_VALUE_0="$auth" \
+              git fetch --quiet --no-tags --no-recurse-submodules --depth="$depth" origin "$head" &&
+            git merge-base --is-ancestor "$base" HEAD || {
+              echo '::notice::Skipped code-gauge: the merge-base with the base branch could not be fetched.'
+              exit 0
+            }
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          JOB_TOKEN: ${{ github.token }}
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
@@ -562,58 +598,20 @@ jobs:
           path: ${{ steps.test.outputs.log_path }}
           retention-days: 14
           if-no-files-found: error
-      # Warnings only for now, so these steps must never fail the job: every expected failure
-      # ends them successfully and continue-on-error covers the rest. They run even after failed
-      # tests, but after the build (a repository developing wb itself runs wb from its build
-      # output) and before the steps below that modify and stage files, which code-gauge would
-      # count as changes. wb is run directly because Yarn 1 would wrap its output in its own lines.
-      # wb executes code installed by the pull request, so the steps running it get no token:
-      # unsetting a variable would not do, since a child can still read it from the parent's
-      # /proc/<pid>/environ.
-      - if: ${{ !cancelled() && steps.checkout.outcome == 'success' && github.event_name == 'pull_request' && strategy.job-index == 0 }}
-        name: Check whether wb can report code-gauge violations
-        id: code-gauge-probe
-        continue-on-error: true
-        timeout-minutes: 2
-        run: |
-          if grep -qs '"@willbooster/wb":' package.json && [[ "$(node_modules/.bin/wb code-gauge --help 2> /dev/null)" == *--base* ]]; then
-            echo 'supported=true' >> "$GITHUB_OUTPUT"
-          fi
-      # code-gauge needs the merge-base to be an ancestor of HEAD in the local history, while the
-      # shallow checkout holds only the pull-request merge commit (hosted) or the head branch tip
-      # (self-hosted). The compare API names the merge-base and how many commits HEAD is ahead of
-      # the base branch, which bounds the depth that reaches it. --shallow-exclude would fetch
-      # less but leaves a broken shallow repository when a commit merging the base branch is
-      # fetched, which the hosted HEAD always is. The checkout persists no credentials, so the
-      # job token (read-only on fork pull requests, which suffices) authenticates explicitly.
-      - if: ${{ !cancelled() && steps.code-gauge-probe.outputs.supported == 'true' }}
-        name: Fetch the merge-base for code-gauge
-        id: code-gauge-base
-        continue-on-error: true
-        timeout-minutes: 5
-        run: |
-          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$JOB_TOKEN" | base64 | tr -d '\n')"
-          head=$(git rev-parse HEAD)
-          read -r base depth < <(
-            curl --fail --show-error --silent --retry 3 -H "$auth" \
-              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/compare/$(jq -rn --arg ref "$BASE_REF" '$ref | @uri')...$head?per_page=1&page=2" |
-              jq -r '"\(.merge_base_commit.sha) \(.ahead_by + 1)"'
-          ) &&
-            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$GITHUB_SERVER_URL/.extraheader" GIT_CONFIG_VALUE_0="$auth" \
-              git fetch --quiet --no-tags --no-recurse-submodules --depth="$depth" origin "$head" &&
-            git merge-base --is-ancestor "$base" HEAD || {
-              echo '::notice::Skipped code-gauge: the merge-base with the base branch could not be fetched.'
-              exit 0
-            }
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          JOB_TOKEN: ${{ github.token }}
+      # Warnings only for now, so this step must never fail the job: every expected failure ends
+      # it successfully and continue-on-error covers the rest. It runs even after failed tests,
+      # but after the build (a repository developing wb itself runs wb from its build output) and
+      # before the steps below that modify and stage files, which code-gauge would count as
+      # changes. wb is run directly because Yarn 1 would wrap its output in its own lines. An
+      # older wb has no code-gauge command and prints its general help for it.
       - if: ${{ !cancelled() && steps.code-gauge-base.outputs.base }}
         name: Report code-gauge violations in the changed code
         continue-on-error: true
         timeout-minutes: 5
         run: |
+          if [[ "$(node_modules/.bin/wb code-gauge --help 2> /dev/null)" != *--base* ]]; then
+            exit 0
+          fi
           output=$(node_modules/.bin/wb code-gauge --base "$BASE" 2>&1) || true
           if [[ -n "$output" ]]; then
             echo "$output"
