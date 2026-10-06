@@ -3,6 +3,15 @@ name: Release
 on:
   workflow_call:
     inputs:
+      artifact_name:
+        description: Artifact from this workflow run to download before building and releasing
+        required: false
+        type: string
+      artifact_path:
+        description: Destination for the downloaded release artifact
+        default: .tmp/release-artifacts
+        required: false
+        type: string
       dot_env_path:
         default: .env
         required: false
@@ -274,6 +283,12 @@ jobs:
               ${{ steps.env-info.outputs.runner }} install ${{ steps.env-info.outputs.skip-scripts-option }}
             }
           fi
+      - if: ${{ inputs.artifact_name }}
+        name: Download release artifact
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.artifact_path || '.tmp/release-artifacts' }}
       - if: ${{ !inputs.skip_build }}
         name: Build
         run: if [[ "$(cat package.json)" == *'"build":'* ]]; then ${{ steps.env-info.outputs.runner }} run build; fi
