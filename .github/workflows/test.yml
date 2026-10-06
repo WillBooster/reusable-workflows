@@ -620,10 +620,15 @@ jobs:
           if [[ "$(node_modules/.bin/wb code-gauge --help 2> /dev/null)" != *--base* ]]; then
             exit 0
           fi
-          output=$(node_modules/.bin/wb code-gauge --base "$BASE" 2>&1) || true
+          status=0
+          output=$(node_modules/.bin/wb code-gauge --base "$BASE" 2>&1) || status=$?
           if [[ -n "$output" ]]; then
             echo "$output"
             printf '### code-gauge\n\n```\n%s\n```\n' "$output" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # wb reports violations and an incomplete check with exit code 0, so anything else is wb failing.
+          if [[ "$status" -ne 0 ]]; then
+            echo "::warning::wb code-gauge failed with exit code $status; its output above is not a violation report."
           fi
         env:
           BASE: ${{ steps.code-gauge-base.outputs.base }}
