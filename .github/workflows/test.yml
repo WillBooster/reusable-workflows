@@ -209,6 +209,50 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ (runner.environment == 'self-hosted' && (github.head_ref || github.ref_name)) || '' }}
+      # The code-gauge report near the end of the job needs, as an ancestor of HEAD in the local
+      # history, the commit the pull request's changes are measured against, while the checkout is
+      # shallow. A hosted run checks out the pull-request merge commit, whose first parent is the
+      # base it was built on: taking that parent keeps the comparison exact even when the base
+      # branch moved or was rewritten since. A self-hosted run checks out the head branch tip, so
+      # the compare API names the merge-base and how many commits HEAD is ahead of the base
+      # branch, which bounds the depth that reaches it. --shallow-exclude would fetch less but
+      # leaves a broken shallow repository when a commit merging the base branch is fetched. The
+      # checkout persists no credentials, so the job token (read-only on fork pull requests,
+      # which suffices) authenticates explicitly; that is why this runs here, before any code of
+      # the pull request does: a process such code leaves behind could read the token from this
+      # step's command lines. A failure only costs the report, so it never fails the job.
+      - if: ${{ steps.checkout.outcome == 'success' && github.event_name == 'pull_request' && strategy.job-index == 0 }}
+        name: Fetch the base commit for code-gauge
+        id: code-gauge-base
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          if ! grep -qs '"@willbooster/wb":' package.json; then
+            exit 0
+          fi
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$JOB_TOKEN" | base64 | tr -d '\n')"
+          head=$(git rev-parse HEAD)
+          deepen() {
+            GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.$GITHUB_SERVER_URL/.extraheader" GIT_CONFIG_VALUE_0="$auth" \
+              git fetch --quiet --no-tags --no-recurse-submodules --depth="$1" origin "$head"
+          }
+          if [[ "$IS_MERGE_COMMIT" == true ]]; then
+            deepen 2 && base=$(git rev-parse --verify --quiet 'HEAD^1')
+          else
+            read -r base depth < <(
+              curl --fail --show-error --silent --retry 3 -H "$auth" \
+                "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/compare/$(jq -rn --arg ref "$BASE_REF" '$ref | @uri')...$head?per_page=1&page=2" |
+                jq -r '"\(.merge_base_commit.sha) \(.ahead_by + 1)"'
+            ) && deepen "$depth" && git merge-base --is-ancestor "$base" HEAD
+          fi || {
+            echo '::notice::Skipped code-gauge: the base commit of the pull request could not be fetched.'
+            exit 0
+          }
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          IS_MERGE_COMMIT: ${{ runner.environment != 'self-hosted' }}
+          JOB_TOKEN: ${{ github.token }}
       # The secret is passed via env and written with printf so that quotes or backslashes in
       # its value cannot break out of the shell command.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
@@ -562,6 +606,35 @@ jobs:
           path: ${{ steps.test.outputs.log_path }}
           retention-days: 14
           if-no-files-found: error
+      # Warnings only for now, so this step must never fail the job: every expected failure ends
+      # it successfully and continue-on-error covers the rest. It runs even after failed tests,
+      # but after the build (a repository developing wb itself runs wb from its build output) and
+      # before the steps below that modify and stage files, which code-gauge would count as
+      # changes. wb is run directly because Yarn 1 would wrap its output in its own lines. An
+      # older wb has no code-gauge command and prints its general help for it.
+      - if: ${{ !cancelled() && steps.code-gauge-base.outputs.base }}
+        name: Report code-gauge violations in the changed code
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          if [[ "$(node_modules/.bin/wb code-gauge --help 2> /dev/null)" != *--base* ]]; then
+            exit 0
+          fi
+          status=0
+          output=$(node_modules/.bin/wb code-gauge --base "$BASE" 2>&1) || status=$?
+          heading='code-gauge'
+          # wb reports violations and an incomplete check with exit code 0, so anything else is wb failing.
+          if [[ "$status" -ne 0 ]]; then
+            heading="code-gauge (wb failed with exit code $status; not a violation report)"
+            echo "::warning::wb code-gauge failed with exit code $status."
+          fi
+          if [[ -n "$output" ]]; then
+            echo "$output"
+            printf '### %s\n\n```\n%s\n```\n' "$heading" "$output" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        env:
+          BASE: ${{ steps.code-gauge-base.outputs.base }}
+          FORCE_COLOR: 0
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run lint-staged
         run: |
