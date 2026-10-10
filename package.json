@@ -20,7 +20,7 @@
     "@actions/expressions": "0.3.61",
     "@willbooster/wb": "22.18.0",
     "lefthook": "2.1.16",
-    "one-way-git-sync": "6.0.46",
+    "one-way-git-sync": "6.0.49",
     "sort-package-json": "4.0.0"
   }
 }
