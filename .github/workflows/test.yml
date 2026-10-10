@@ -109,7 +109,7 @@ jobs:
             echo "require-node-install=1" >> $GITHUB_OUTPUT
           fi
       - if: ${{ steps.check-node.outputs.require-node-install }}
-        uses: actions/setup-node@v7.0.0
+        uses: actions/setup-node@v7.1.0
         with:
           check-latest: true
           node-version: lts/*
@@ -274,7 +274,7 @@ jobs:
             echo "exist-nodejs-version=1" >> $GITHUB_OUTPUT
           fi
       - if: ${{ needs.pre.outputs.should_skip != 'true' && !steps.check-ver.outputs.exist-nodejs-version }}
-        uses: actions/setup-node@v7.0.0
+        uses: actions/setup-node@v7.1.0
         with:
           check-latest: true
           node-version: ${{ matrix.node-version || 'lts/*' }}
@@ -285,7 +285,7 @@ jobs:
           chmod 700 "$GNUPGHOME"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.check-ver.outputs.exist-any-version }}
-        uses: jdx/mise-action@v5.0.1
+        uses: jdx/mise-action@v5.1.1
         with:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
       # Unlike deploy's fail-fast check, this only warns: fork pull requests legitimately run
