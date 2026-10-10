@@ -600,7 +600,7 @@ jobs:
           RUNNER: ${{ steps.env-info.outputs.runner }}
       - if: ${{ always() && inputs.upload_test_log && steps.test.outputs.log_path != '' }}
         name: Upload test log
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: test-output-${{ runner.os }}-${{ matrix.node-version || 'pinned' }}-${{ job.check_run_id }}-${{ github.run_attempt }}
           path: ${{ steps.test.outputs.log_path }}
@@ -693,7 +693,7 @@ jobs:
           FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       - if: ${{ always() && steps.checkout.outcome == 'success' && needs.pre.outputs.should_skip != 'true' && inputs.artifact_path }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: test-artifact-${{ runner.os }}-${{ matrix.node-version || 'pinned' }}-${{ job.check_run_id }}-${{ github.run_attempt }}
           path: ${{ inputs.artifact_path }}

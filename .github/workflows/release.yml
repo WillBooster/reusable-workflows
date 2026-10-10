@@ -285,7 +285,7 @@ jobs:
           fi
       - if: ${{ inputs.artifact_name }}
         name: Download release artifact
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ inputs.artifact_path || '.tmp/release-artifacts' }}
