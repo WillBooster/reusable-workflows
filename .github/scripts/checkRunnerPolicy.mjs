@@ -41,7 +41,7 @@ for (const file of fs.readdirSync(".github/workflows").filter((name) => name.end
           '["ubuntu-latest"]',
           '"self-hosted-ubuntu"',
           '["self-hosted-ubuntu"]',
-          '["self-hosted","Linux","extra-large"]',
+          '["self-hosted","Linux","large"]',
         ]) {
           const labels = evaluate(visibility, { github_hosted_runner, runs_on });
           assert.ok(
