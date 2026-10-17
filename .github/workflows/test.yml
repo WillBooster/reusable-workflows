@@ -285,7 +285,7 @@ jobs:
           chmod 700 "$GNUPGHOME"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.check-ver.outputs.exist-any-version }}
-        uses: jdx/mise-action@v5.1.1
+        uses: jdx/mise-action@v5.2.0
         with:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
       # Unlike deploy's fail-fast check, this only warns: fork pull requests legitimately run
