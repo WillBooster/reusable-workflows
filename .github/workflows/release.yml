@@ -134,7 +134,7 @@ jobs:
       - if: ${{ !steps.check-ver.outputs.exist-nodejs-version }}
         uses: actions/setup-node@v7.1.0
         with:
-          node-version: '24.21.0'
+          node-version: '24.22.0'
           check-latest: true
       - if: ${{ steps.check-ver.outputs.exist-any-version && runner.environment == 'self-hosted' }}
         name: Setup isolated GPG home
@@ -143,7 +143,7 @@ jobs:
           chmod 700 "$GNUPGHOME"
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
       - if: ${{ steps.check-ver.outputs.exist-any-version }}
-        uses: jdx/mise-action@v5.1.1
+        uses: jdx/mise-action@v5.2.0
         with:
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
       - name: Ensure fnox secrets are resolvable
