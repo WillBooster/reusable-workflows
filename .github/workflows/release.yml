@@ -97,12 +97,14 @@ jobs:
       HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
       # Either registry token triggers the registry-config generation/cleanup and the hardened
       # install path (scripts-disabled credentialed install + tokenless lifecycle replay).
-      HAS_REGISTRY_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.TAKUMI_GUARD_TOKEN }}
+      HAS_REGISTRY_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.VERDACCIO_PUBLISH_TOKEN || !!secrets.TAKUMI_GUARD_TOKEN }}
       HAS_TAKUMI_GUARD_TOKEN: ${{ !!secrets.TAKUMI_GUARD_TOKEN }}
       # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN and TAKUMI_GUARD_TOKEN
       # secrets themselves are provided step-scoped only to the steps whose package-manager
       # invocations expand them from the generated registry configs.
-      HAS_VERDACCIO_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN }}
+      # A publish-token-only caller still needs the Verdaccio auth line that the Release step
+      # expands; its install then fails with a clear auth error instead of a misrouted lookup.
+      HAS_VERDACCIO_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.VERDACCIO_PUBLISH_TOKEN }}
       # Defined-but-empty defaults: yarn1 crashes with "Failed to replace env in config" when a
       # .npmrc references an UNDEFINED env var (an empty one is fine), so steps that are not
       # given the secrets still need the variables to exist while the generated .npmrc is on
