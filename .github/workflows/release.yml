@@ -402,11 +402,10 @@ jobs:
           # semantic-release's npm plugin reads the NPM_TOKEN env var for registry auth.
           # The dedicated npmjs publish token wins; the Verdaccio publish token serves
           # repositories that publish to the private registry.
-          # TODO: drop the VERDACCIO_TOKEN fallbacks once every Verdaccio publisher passes
-          # VERDACCIO_PUBLISH_TOKEN.
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN || secrets.VERDACCIO_PUBLISH_TOKEN || secrets.VERDACCIO_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN || secrets.VERDACCIO_PUBLISH_TOKEN }}
           # The release script's npm invocations expand these tokens from the generated .npmrc,
-          # whose Verdaccio auth line must carry the publish token for a direct `npm publish`.
+          # whose Verdaccio auth line must carry the publish token for a direct `npm publish`;
+          # non-publishing callers keep their read-only install token for reinstalls.
           TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_PUBLISH_TOKEN || secrets.VERDACCIO_TOKEN }}
           HUSKY: 0
