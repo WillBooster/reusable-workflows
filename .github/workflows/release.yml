@@ -334,6 +334,12 @@ jobs:
               echo "stale=true" >> "$GITHUB_OUTPUT"
             else
               REMOTE_HEAD=$(printf '%s' "$LS_OUT" | cut -f1)
+              if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" && "$GITHUB_RUN_ATTEMPT" != "1" ]]; then
+                : # semantic-release releases nothing from a commit behind the branch head, and the
+                : # successor run may have finished before this re-run's failure was fixed.
+                echo "::error::This re-run cannot release: $GITHUB_REF_NAME moved to $REMOTE_HEAD, and semantic-release does not release from an older commit. Re-run the latest Release run for $REMOTE_HEAD instead."
+                exit 1
+              fi
               if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
                 : # A gh failure must not silently disable this guard (nor silently skip the
                 : # release): retry once, then fail loudly — nothing has been released yet.
@@ -383,6 +389,7 @@ jobs:
           FILE_PATH_1: ${{ inputs.file_path_1 }}
       - if: ${{ steps.stale-check.outputs.stale != 'true' }}
         name: Release
+        id: release
         run: |
           if [[ "$(cat package.json)" == *'"release":'* ]]; then
             ${{ steps.env-info.outputs.runner }} run release
@@ -410,6 +417,21 @@ jobs:
           VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_PUBLISH_TOKEN || secrets.VERDACCIO_TOKEN }}
           HUSKY: 0
           LEFTHOOK: 0
+      # A re-run is how a failed release is retried, but semantic-release releases nothing for a
+      # commit that a tag already covers, e.g. a tag a failed attempt pushed before its publish
+      # failed. Fail instead of succeeding with nothing released.
+      - if: ${{ github.run_attempt != '1' && steps.release.outcome == 'success' && steps.pre-release-tag.outcome == 'success' }}
+        name: Check that the re-run released
+        run: |
+          git fetch --prune --prune-tags --tags --force
+          git tag --list | sort > "$RUNNER_TEMP/tags-after-rerun.txt"
+          if [[ -z "$(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-rerun.txt")" ]]; then
+            COVERING_TAGS=$(git tag --contains "$GITHUB_SHA" | tr '\n' ' ')
+            if [[ -n "$COVERING_TAGS" ]]; then
+              echo "::error::This re-run released nothing because ${COVERING_TAGS% } already covers $GITHUB_SHA. If an earlier attempt pushed it and then failed, complete its remaining publish steps manually, or, when no publish step ran, delete the tag and its refs/notes/semantic-release-<tag> ref and re-run."
+              exit 1
+            fi
+          fi
 
       # !cancelled(): semantic-release can fail AFTER pushing its tag (e.g. a later publish
       # plugin); the pushed release must still be detected and deployed — a re-run cannot
