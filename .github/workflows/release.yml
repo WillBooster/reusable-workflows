@@ -337,7 +337,7 @@ jobs:
               if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" && "$GITHUB_RUN_ATTEMPT" != "1" ]]; then
                 : # semantic-release releases nothing from a commit behind the branch head, and the
                 : # successor run may have finished before this re-run's failure was fixed.
-                echo "::error::This re-run cannot release: $GITHUB_REF_NAME moved to $REMOTE_HEAD, and semantic-release does not release from an older commit. Re-run the latest Release run for $REMOTE_HEAD instead."
+                echo "::error::This re-run cannot release: $GITHUB_REF_NAME moved to $REMOTE_HEAD, and semantic-release does not release from an older commit. Re-run the latest Release run for $REMOTE_HEAD instead, or push a commit to $GITHUB_REF_NAME when no run exists for it."
                 exit 1
               fi
               if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
@@ -358,8 +358,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
       # This baseline feeds the new-release check that gates the deploy trigger and the
-      # Discord notification, so skip it (and its fetch cost) when neither is configured.
-      - if: ${{ steps.stale-check.outputs.stale != 'true' && (inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true') }}
+      # Discord notification, and the re-run check, so skip it (and its fetch cost) when
+      # none of them applies.
+      - if: ${{ steps.stale-check.outputs.stale != 'true' && (inputs.trigger_deploy_workflow || env.HAS_DISCORD_WEBHOOK_URL == 'true' || github.run_attempt != '1') }}
         name: Record the tags existing before the release
         id: pre-release-tag
         # The checkout is shallow and tag-less, so fetch the tags first (`--unshallow` on a
