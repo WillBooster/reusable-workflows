@@ -431,12 +431,13 @@ jobs:
         run: |
           git fetch --prune --prune-tags --tags --force || { sleep 5; git fetch --prune --prune-tags --tags --force; } || true
           git tag --list | sort > "$RUNNER_TEMP/tags-after-rerun.txt"
-          if [[ -z "$(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-rerun.txt")" ]]; then
-            COVERING_TAGS=$(git tag --contains "$GITHUB_SHA" | tr '\n' ' ')
-            if [[ -n "$COVERING_TAGS" ]]; then
-              echo "::error::This re-run released nothing because ${COVERING_TAGS% } already covers $GITHUB_SHA. If an earlier attempt pushed it and then failed: when it published and only a later step failed, keep the tag (if that step was the deploy dispatch, run \`gh workflow run <deploy workflow> --ref <tag>\`; a failed announcement needs nothing re-run); when it published only partly, complete the remaining publish steps manually; when no publish step ran, delete the tag and its refs/notes/semantic-release-<tag> ref and re-run."
-              exit 1
-            fi
+          # Only a new tag at GITHUB_SHA or a descendant is this attempt's release.
+          git tag --contains "$GITHUB_SHA" | sort > "$RUNNER_TEMP/tags-covering-sha.txt"
+          NEW_COVERING_TAGS=$(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-rerun.txt" | comm -12 - "$RUNNER_TEMP/tags-covering-sha.txt")
+          COVERING_TAGS=$(tr '\n' ' ' < "$RUNNER_TEMP/tags-covering-sha.txt")
+          if [[ -z "$NEW_COVERING_TAGS" && -n "$COVERING_TAGS" ]]; then
+            echo "::error::This re-run released nothing because ${COVERING_TAGS% } already covers $GITHUB_SHA. If an earlier attempt pushed it and then failed: when it published and only a later step failed, keep the tag (if that step was the deploy dispatch, run \`gh workflow run <deploy workflow> --ref <tag>\`; a failed announcement needs nothing re-run); when it published only partly, complete the remaining publish steps manually; when no publish step ran, delete the tag and its refs/notes/semantic-release-<tag> ref and re-run."
+            exit 1
           fi
 
       # !cancelled(): semantic-release can fail AFTER pushing its tag (e.g. a later publish
