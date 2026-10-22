@@ -434,7 +434,7 @@ jobs:
           if [[ -z "$(comm -13 "$RUNNER_TEMP/tags-before-release.txt" "$RUNNER_TEMP/tags-after-rerun.txt")" ]]; then
             COVERING_TAGS=$(git tag --contains "$GITHUB_SHA" | tr '\n' ' ')
             if [[ -n "$COVERING_TAGS" ]]; then
-              echo "::error::This re-run released nothing because ${COVERING_TAGS% } already covers $GITHUB_SHA. If an earlier attempt pushed it and then failed: when it published and only a later step failed, keep the tag and dispatch the deploy with \`gh workflow run <deploy workflow> --ref <tag>\`; when it published only partly, complete the remaining publish steps manually; when no publish step ran, delete the tag and its refs/notes/semantic-release-<tag> ref and re-run."
+              echo "::error::This re-run released nothing because ${COVERING_TAGS% } already covers $GITHUB_SHA. If an earlier attempt pushed it and then failed: when it published and only a later step failed, keep the tag (if that step was the deploy dispatch, run \`gh workflow run <deploy workflow> --ref <tag>\`; a failed announcement needs nothing re-run); when it published only partly, complete the remaining publish steps manually; when no publish step ran, delete the tag and its refs/notes/semantic-release-<tag> ref and re-run."
               exit 1
             fi
           fi
