@@ -95,8 +95,9 @@ jobs:
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
       HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
-      # Either registry token triggers the registry-config generation/cleanup and the hardened
-      # install path (scripts-disabled credentialed install + tokenless lifecycle replay).
+      # Any registry token (VERDACCIO_PUBLISH_TOKEN included) triggers the registry-config
+      # generation/cleanup and the hardened install path (scripts-disabled credentialed install
+      # + tokenless lifecycle replay).
       HAS_REGISTRY_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.VERDACCIO_PUBLISH_TOKEN || !!secrets.TAKUMI_GUARD_TOKEN }}
       HAS_TAKUMI_GUARD_TOKEN: ${{ !!secrets.TAKUMI_GUARD_TOKEN }}
       # Non-secret signal for the `if:` gates below; the VERDACCIO_TOKEN and TAKUMI_GUARD_TOKEN
