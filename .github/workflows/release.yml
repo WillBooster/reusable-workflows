@@ -329,7 +329,10 @@ jobs:
               echo "::error::Could not read refs/heads/$GITHUB_REF_NAME on origin (git ls-remote exited $rc); nothing has been released — re-run the job."
               exit 1
             fi
-            if [[ $rc -eq 2 ]]; then
+            if [[ $rc -eq 2 && "$GITHUB_RUN_ATTEMPT" != "1" ]]; then
+              echo "::error::This re-run cannot release: $GITHUB_REF_NAME was deleted. Release from a branch that still exists."
+              exit 1
+            elif [[ $rc -eq 2 ]]; then
               echo "::warning::Skipping the release: $GITHUB_REF_NAME was deleted."
               echo "stale=true" >> "$GITHUB_OUTPUT"
             else
