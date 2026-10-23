@@ -305,7 +305,10 @@ jobs:
       # After waiting in the concurrency queue, a run can be older than the branch head a
       # later run already released from; releasing from the stale checkout could publish a
       # lower version after a higher one. GitHub does not guarantee queue ordering, so skip
-      # whenever the remote branch head has moved past this run's commit.
+      # whenever the remote branch head has moved past this run's commit. A head moved by a
+      # push that creates no run (e.g. [skip ci]) only defers this commit's release to the
+      # next run: semantic-release does not release from a commit behind the branch head
+      # anyway, and the next release includes every unreleased commit.
       - name: Check whether this run is stale
         id: stale-check
         # Branch-triggered runs only: a tag/dispatch ref has no refs/heads entry. A missing
@@ -313,10 +316,7 @@ jobs:
         # workflow with GITHUB_SHA reset to the default branch, which must never be
         # released. ls-remote's status is read un-piped with --exit-code (2 = ref absent;
         # anything else non-zero is a transport error, retried once then failed loudly —
-        # nothing has been released yet, so a re-run recovers cleanly). A moved head marks
-        # the run stale only when a successor run exists for the new head: renovate
-        # branch-automerges and [skip ci] pushes move the head WITHOUT creating a run, and
-        # skipping then would silently drop this commit's release.
+        # nothing has been released yet, so a re-run recovers cleanly).
         run: |
           if [[ "$GITHUB_REF" == refs/heads/* ]]; then
             ls_head() { git ls-remote --exit-code origin "refs/heads/$GITHUB_REF_NAME"; }
@@ -329,37 +329,23 @@ jobs:
               echo "::error::Could not read refs/heads/$GITHUB_REF_NAME on origin (git ls-remote exited $rc); nothing has been released — re-run the job."
               exit 1
             fi
+            REMOTE_HEAD=$(printf '%s' "$LS_OUT" | cut -f1)
             if [[ $rc -eq 2 && "$GITHUB_RUN_ATTEMPT" != "1" ]]; then
               echo "::error::This re-run cannot release: $GITHUB_REF_NAME was deleted. Release from a branch that still exists."
               exit 1
             elif [[ $rc -eq 2 ]]; then
               echo "::warning::Skipping the release: $GITHUB_REF_NAME was deleted."
               echo "stale=true" >> "$GITHUB_OUTPUT"
-            else
-              REMOTE_HEAD=$(printf '%s' "$LS_OUT" | cut -f1)
-              if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" && "$GITHUB_RUN_ATTEMPT" != "1" ]]; then
-                : # semantic-release releases nothing from a commit behind the branch head, and the
-                : # successor run may have finished before this re-run's failure was fixed.
-                echo "::error::This re-run cannot release: $GITHUB_REF_NAME moved to $REMOTE_HEAD, and semantic-release does not release from an older commit. Re-run the latest Release run for $REMOTE_HEAD instead, or push a commit to $GITHUB_REF_NAME when no run exists for it."
-                exit 1
-              fi
-              if [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
-                : # A gh failure must not silently disable this guard (nor silently skip the
-                : # release): retry once, then fail loudly — nothing has been released yet.
-                run_count() { gh run list --commit "$REMOTE_HEAD" --workflow "$GITHUB_WORKFLOW" --json databaseId --jq length; }
-                SUCCESSOR_RUNS=$(run_count) || { sleep 5; SUCCESSOR_RUNS=$(run_count); } || {
-                  echo "::error::Could not list workflow runs for $REMOTE_HEAD; nothing has been released — re-run the job."
-                  exit 1
-                }
-                if [[ "$SUCCESSOR_RUNS" != "0" ]]; then
-                  echo "::warning::Skipping the release: $GITHUB_REF_NAME moved to $REMOTE_HEAD and a newer run exists for it."
-                  echo "stale=true" >> "$GITHUB_OUTPUT"
-                fi
-              fi
+            elif [[ "$REMOTE_HEAD" != "$GITHUB_SHA" && "$GITHUB_RUN_ATTEMPT" != "1" ]]; then
+              : # The successor run may have finished before this re-run's failure was fixed, so
+              : # skipping could leave the commit unreleased without anyone noticing.
+              echo "::error::This re-run cannot release: $GITHUB_REF_NAME moved to $REMOTE_HEAD, and semantic-release does not release from an older commit. Re-run the latest Release run for $REMOTE_HEAD instead, or push a commit to $GITHUB_REF_NAME when no run exists for it."
+              exit 1
+            elif [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
+              echo "::warning::Skipping the release: $GITHUB_REF_NAME moved to $REMOTE_HEAD; a run for a later commit releases this commit's changes."
+              echo "stale=true" >> "$GITHUB_OUTPUT"
             fi
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
       # This baseline feeds the new-release check that gates the deploy trigger and the
       # Discord notification, and the re-run check, so skip it (and its fetch cost) when
       # none of them applies.
