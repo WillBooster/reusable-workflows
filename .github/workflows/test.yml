@@ -434,16 +434,17 @@ jobs:
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.runner == 'bun' }}
         name: Check that bun install leaves bun.lock unchanged
         run: |
+          : # A lockfile update under a Takumi Guard .npmrc rewrites every resolved URL to the proxy,
+          : # so compare both sides with those URLs stripped (as the normalization step below does):
+          : # only changes made by this install count, and proxy URLs already committed are left
+          : # to that step.
+          normalize() { sed -E 's#(", )"https://npm\.flatt\.tech/[^"]*"#\1""#g' bun.lock; }
+          normalize > "$RUNNER_TEMP/bun-lock.before"
           bun install --ignore-scripts
-          : # A lockfile update under a Takumi Guard .npmrc rewrites every resolved URL to the proxy;
-          : # strip those as the normalization step below does, so only real lockfile changes count.
-          sed -i.orig -E 's#(", )"https://npm\.flatt\.tech/[^"]*"#\1""#g' bun.lock
-          rm bun.lock.orig
-          if ! git diff --exit-code --stat -- bun.lock; then
-            : # Not piped into head: under pipefail, git dying of SIGPIPE would fail the step early.
-            git diff -- bun.lock > "$RUNNER_TEMP/bun-lock.diff"
+          normalize > "$RUNNER_TEMP/bun-lock.after"
+          if ! diff -u --label bun.lock --label bun.lock "$RUNNER_TEMP/bun-lock.before" "$RUNNER_TEMP/bun-lock.after" > "$RUNNER_TEMP/bun-lock.diff"; then
             head -n 200 "$RUNNER_TEMP/bun-lock.diff"
-            echo "::error::\`bun install\` with the pinned Bun $(bun -v) changes bun.lock; run \`bun install\` with that version (as pinned in mise.toml or .tool-versions) and commit bun.lock."
+            echo "::error::\`bun install\` with the pinned Bun $(bun -v) changes bun.lock as shown above; run \`bun install\` with that version (as pinned in mise.toml or .tool-versions) and commit bun.lock."
             exit 1
           fi
         env:
