@@ -425,6 +425,30 @@ jobs:
           # wrapper. Empty means "honor yarn-path" (yarn1's boolifyWithDefault treats '' as
           # unset); Berry repos always keep their committed yarnPath — it IS the Berry binary.
           YARN_IGNORE_PATH: ${{ (env.HAS_REGISTRY_TOKEN == 'true' && steps.env-info.outputs.skip-scripts-option == '--ignore-scripts') && '1' || '' }}
+      # --frozen-lockfile accepts any bun.lock that still satisfies package.json, including one a
+      # plain `bun install` with the pinned Bun rewrites (e.g. a lockfile written by another Bun
+      # version or left with orphaned entries), which then churns on every developer's install.
+      # Right after the frozen install the plain one only re-checks the lockfile, so it is cheap.
+      # Lifecycle scripts stay off: the frozen install already ran or deferred them, and the
+      # registry tokens are in this step's environment.
+      - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.runner == 'bun' }}
+        name: Check that bun install leaves bun.lock unchanged
+        run: |
+          bun install --ignore-scripts
+          : # A lockfile update under a Takumi Guard .npmrc rewrites every resolved URL to the proxy;
+          : # strip those as the normalization step below does, so only real lockfile changes count.
+          sed -i.orig -E 's#(", )"https://npm\.flatt\.tech/[^"]*"#\1""#g' bun.lock
+          rm bun.lock.orig
+          if ! git diff --exit-code --stat -- bun.lock; then
+            : # Not piped into head: under pipefail, git dying of SIGPIPE would fail the step early.
+            git diff -- bun.lock > "$RUNNER_TEMP/bun-lock.diff"
+            head -n 200 "$RUNNER_TEMP/bun-lock.diff"
+            echo "::error::\`bun install\` with the pinned Bun $(bun -v) changes bun.lock; run \`bun install\` with that version (as pinned in mise.toml or .tool-versions) and commit bun.lock."
+            exit 1
+          fi
+        env:
+          TAKUMI_GUARD_TOKEN: ${{ secrets.TAKUMI_GUARD_TOKEN }}
+          VERDACCIO_TOKEN: ${{ secrets.VERDACCIO_TOKEN }}
       # Replay the lifecycle scripts the credentialed install skipped, in an environment without
       # the registry tokens (the job-level empty values keep ${VERDACCIO_TOKEN} and
       # ${TAKUMI_GUARD_TOKEN} references in .npmrc/.yarnrc.yml expanding to '' instead of
