@@ -342,7 +342,7 @@ jobs:
               echo "::error::This re-run cannot release: $GITHUB_REF_NAME moved to $REMOTE_HEAD, and semantic-release does not release from an older commit. Re-run the latest Release run for $REMOTE_HEAD instead, or push a commit to $GITHUB_REF_NAME when no run exists for it."
               exit 1
             elif [[ "$REMOTE_HEAD" != "$GITHUB_SHA" ]]; then
-              echo "::warning::Skipping the release: $GITHUB_REF_NAME moved to $REMOTE_HEAD; a run for a later commit releases this commit's changes."
+              echo "::warning::Skipping the release: $GITHUB_REF_NAME moved to $REMOTE_HEAD; the next release from $REMOTE_HEAD or a later commit includes this commit's changes (push a commit when no run is pending)."
               echo "stale=true" >> "$GITHUB_OUTPUT"
             fi
           fi
