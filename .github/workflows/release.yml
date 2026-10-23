@@ -59,7 +59,7 @@ on:
       GH_TOKEN:
         required: true
       NPM_TOKEN:
-        description: 'auth token for registry.npmjs.org, for packages that token-publish (e.g. first publishes of platform packages, which npm trusted publishing cannot create). Use a granular, package-scoped, short-lived publish token and revoke it once trusted publishing takes over. It reaches only the Release step env: semantic-release''s npm plugin reads it, and a consumer release script publishing directly must write its own npm auth config from the env var (the generated workspace .npmrc carries no registry.npmjs.org line).'
+        description: "auth token for registry.npmjs.org, for packages that token-publish (e.g. first publishes of platform packages, which npm trusted publishing cannot create). Use a granular, package-scoped, short-lived publish token and revoke it once trusted publishing takes over. It reaches only the Release step env: semantic-release's npm plugin reads it, and a consumer release script publishing directly must write its own npm auth config from the env var (the generated workspace .npmrc carries no registry.npmjs.org line)."
         required: false
       TAKUMI_GUARD_TOKEN:
         description: auth token for the Takumi Guard malicious-package-blocking registry proxy (used to generate registry configs)
