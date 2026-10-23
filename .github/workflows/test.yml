@@ -425,26 +425,26 @@ jobs:
           # wrapper. Empty means "honor yarn-path" (yarn1's boolifyWithDefault treats '' as
           # unset); Berry repos always keep their committed yarnPath — it IS the Berry binary.
           YARN_IGNORE_PATH: ${{ (env.HAS_REGISTRY_TOKEN == 'true' && steps.env-info.outputs.skip-scripts-option == '--ignore-scripts') && '1' || '' }}
-      # --frozen-lockfile accepts any bun.lock that still satisfies package.json, including one a
-      # plain `bun install` with the pinned Bun rewrites (e.g. a lockfile written by another Bun
-      # version or left with orphaned entries), which then churns on every developer's install.
-      # Right after the frozen install the plain one only re-checks the lockfile, so it is cheap.
-      # Lifecycle scripts stay off: the frozen install already ran or deferred them, and the
-      # registry tokens are in this step's environment.
+      # --frozen-lockfile accepts any bun.lock that still satisfies package.json, including one the
+      # pinned Bun would write differently (e.g. a lockfile written by another Bun version or left
+      # with orphaned entries), which then churns on developers' installs. A plain `bun install`
+      # after the frozen one does not catch it either: it takes the no-change path and keeps
+      # bun.lock as is. --lockfile-only re-derives bun.lock without touching node_modules or
+      # running lifecycle scripts; the registry tokens are in this step's environment.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.runner == 'bun' }}
-        name: Check that bun install leaves bun.lock unchanged
+        name: Check that the pinned Bun leaves bun.lock unchanged
         run: |
           : # A lockfile update under a Takumi Guard .npmrc rewrites every resolved URL to the proxy,
           : # so compare both sides with those URLs stripped (as the normalization step below does):
-          : # only changes made by this install count, and proxy URLs already committed are left
+          : # only changes made by this re-derivation count, and proxy URLs already committed are left
           : # to that step.
           normalize() { sed -E 's#(", )"https://npm\.flatt\.tech/[^"]*"#\1""#g' bun.lock; }
           normalize > "$RUNNER_TEMP/bun-lock.before"
-          bun install --ignore-scripts
+          bun install --lockfile-only --ignore-scripts
           normalize > "$RUNNER_TEMP/bun-lock.after"
           if ! diff -u --label bun.lock --label bun.lock "$RUNNER_TEMP/bun-lock.before" "$RUNNER_TEMP/bun-lock.after" > "$RUNNER_TEMP/bun-lock.diff"; then
             head -n 200 "$RUNNER_TEMP/bun-lock.diff"
-            echo "::error::\`bun install\` with the pinned Bun $(bun -v) changes bun.lock as shown above; run \`bun install\` with that version (as pinned in mise.toml or .tool-versions) and commit bun.lock."
+            echo "::error::The pinned Bun $(bun -v) rewrites bun.lock as shown above; run \`bun install --lockfile-only\` with that version (as pinned in mise.toml or .tool-versions) and commit bun.lock."
             exit 1
           fi
         env:
