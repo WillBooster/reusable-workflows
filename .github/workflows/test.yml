@@ -427,10 +427,11 @@ jobs:
           YARN_IGNORE_PATH: ${{ (env.HAS_REGISTRY_TOKEN == 'true' && steps.env-info.outputs.skip-scripts-option == '--ignore-scripts') && '1' || '' }}
       # --frozen-lockfile accepts any bun.lock that still satisfies package.json, including one the
       # pinned Bun would write differently (e.g. a lockfile written by another Bun version or left
-      # with orphaned entries), which then churns on developers' installs. A plain `bun install`
-      # after the frozen one does not catch it either: it takes the no-change path and keeps
-      # bun.lock as is. --lockfile-only re-derives bun.lock without touching node_modules or
-      # running lifecycle scripts; the registry tokens are in this step's environment.
+      # with orphaned entries); any later install that re-resolves it then commits unrelated
+      # lockfile changes. A plain `bun install` after the frozen one does not always catch it:
+      # it can take the no-change path and keep bun.lock as is. --lockfile-only re-derives
+      # bun.lock without touching node_modules or running lifecycle scripts; the registry tokens
+      # are in this step's environment.
       - if: ${{ needs.pre.outputs.should_skip != 'true' && steps.env-info.outputs.runner == 'bun' }}
         name: Check that the pinned Bun leaves bun.lock unchanged
         run: |
