@@ -563,7 +563,6 @@ jobs:
           CONTENT_JSON: ${{ toJSON(format('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!<br>{0} の本番環境 ({1}) を {2} に更新しました。<br>!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!', env.REPO_LINK, inputs.server_url, env.COMMIT_LINK)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-
       - if: ${{ always() }}
         name: Delete credential files
         run: |
