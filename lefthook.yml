@@ -12,16 +12,14 @@ pre-push:
 pre-commit:
   jobs:
     - name: cleanup
-      glob: '**/*.{java}'
+      glob: '**/*.{cjs,css,cts,gql,graphql,hbs,htm,html,java,js,json,json5,jsonc,jsx,less,md,mdx,mjs,mts,scss,toml,ts,tsx,vue,yaml,yml}'
       run: |-
         [ -d node_modules ] || bun install --frozen-lockfile || exit
-        package_json_files="$(printf '%s\n' {staged_files} | grep -E '(^|/)package\.json$' || true)"
-
-
-
-        if [ -n "$package_json_files" ]; then
-          bun sort-package-json $package_json_files
-        fi
+        for file in {staged_files}; do
+          case "$file" in
+            *.cjs|*.css|*.cts|*.gql|*.graphql|*.hbs|*.htm|*.html|*.js|*.json|*.json5|*.jsonc|*.jsx|*.less|*.md|*.mdx|*.mjs|*.mts|*.scss|*.toml|*.ts|*.tsx|*.vue|*.yaml|*.yml) bun fmt --no-script --no-error-on-unmatched-pattern -- "$file" || exit ;;
+          esac
+        done
       stage_fixed: true
     - name: check-migrations
       glob: '**/migration.sql'

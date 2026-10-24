@@ -319,7 +319,6 @@ jobs:
           CONTENT_JSON: ${{ toJSON(format('{0} [{1}]({2}) の {3}{4} が[失敗](https://github.com/{5}/actions/runs/{6})しました！！！', inputs.failure_mention_on_discord, github.event.repository.name, github.event.repository.html_url, inputs.command, (inputs.environment && format(' ({0})', inputs.environment)) || '', github.repository, github.run_id)) }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-
       - if: ${{ always() }}
         name: Delete credential files
         run: |
