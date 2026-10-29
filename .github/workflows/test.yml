@@ -18,10 +18,6 @@ on:
       custom_test_command:
         required: false
         type: string
-      dot_env_path:
-        default: .env
-        required: false
-        type: string
       environment:
         required: false
         type: string
@@ -44,8 +40,6 @@ on:
         required: false
         type: boolean
     secrets:
-      DOT_ENV:
-        required: false
       FNOX_AGE_KEY:
         description: age secret key to decrypt fnox.toml secrets
         required: false
@@ -145,7 +139,6 @@ jobs:
       # step-scoped only to the steps that actually run fnox (the check-fnox-secrets action and
       # the consumer script steps), so dependency lifecycle scripts run by the installs and the
       # lifecycle replay below can never read the long-lived age identity (#458).
-      HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       # Either registry token triggers the registry-config generation/cleanup and the hardened
       # install path (scripts-disabled credentialed install + tokenless lifecycle replay).
       HAS_REGISTRY_TOKEN: ${{ !!secrets.VERDACCIO_TOKEN || !!secrets.TAKUMI_GUARD_TOKEN }}
@@ -253,13 +246,6 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           IS_MERGE_COMMIT: ${{ runner.environment != 'self-hosted' }}
           JOB_TOKEN: ${{ github.token }}
-      # The secret is passed via env and written with printf so that quotes or backslashes in
-      # its value cannot break out of the shell command.
-      - if: ${{ needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
-        run: printf '%s\n' "$DOT_ENV" > "$DOT_ENV_PATH"
-        env:
-          DOT_ENV: ${{ secrets.DOT_ENV }}
-          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
 
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Check version files
@@ -563,19 +549,12 @@ jobs:
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Report code fixed by the previous steps
         run: |
-          excludes=()
-          if [[ "$HAS_DOT_ENV" == "true" ]]; then
-            excludes=(":(exclude)$DOT_ENV_PATH")
-            git restore --staged -- "$DOT_ENV_PATH" 2> /dev/null || true
-          fi
-          if [[ -n "$(git status --porcelain -- . "${excludes[@]}")" ]]; then
+          if [[ -n "$(git status --porcelain -- .)" ]]; then
             git status
-            git diff HEAD -- . "${excludes[@]}"
+            git diff HEAD -- .
             echo '::error::Found changes during gen-code, cleanup, lint-fix and/or build.'
             exit 1
           fi
-        env:
-          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
       # Typecheck must be executed after `gen-code`
       - if: ${{ needs.pre.outputs.should_skip != 'true' }}
         name: Run "typecheck" npm script if exists
@@ -724,13 +703,6 @@ jobs:
           name: test-artifact-${{ runner.os }}-${{ matrix.node-version || 'pinned' }}-${{ job.check_run_id }}-${{ github.run_attempt }}
           path: ${{ inputs.artifact_path }}
 
-      # Delete only when the DOT_ENV secret was actually written by this run: dot_env_path
-      # defaults to .env, which some private repos commit.
-      - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && env.HAS_DOT_ENV == 'true' }}
-        name: Delete credential files
-        run: rm -f -- "$DOT_ENV_PATH"
-        env:
-          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
       - if: ${{ always() && needs.pre.outputs.should_skip != 'true' && env.HAS_REGISTRY_TOKEN == 'true' }}
         name: Clean up the generated registry configs
         uses: WillBooster/reusable-workflows/.github/actions/cleanup-registry-configs@main
