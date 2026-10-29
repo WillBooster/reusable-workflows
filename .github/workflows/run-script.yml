@@ -1,6 +1,6 @@
 name: Run script
 
-# Runs an arbitrary package.json script with the repo's dotenv/secret files in place.
+# Runs an arbitrary package.json script with the caller's secret files (file_path_1/file_path_2) in place.
 # Intended for scheduled maintenance jobs (e.g. cleanup scripts) so that caller repos
 # do not duplicate checkout/setup/install boilerplate per job.
 on:
