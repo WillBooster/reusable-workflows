@@ -25,10 +25,6 @@ on:
       cpu_arch:
         required: false
         type: string
-      dot_env_path:
-        default: .env
-        required: false
-        type: string
       environment:
         # Exported as WB_ENV. Required so a generic script never runs in an ambiguous
         # environment: callers must state e.g. production for jobs touching live data.
@@ -64,8 +60,6 @@ on:
     secrets:
       DISCORD_WEBHOOK_URL:
         required: false
-      DOT_ENV:
-        required: false
       FILE_CONTENT_1:
         required: false
       FILE_CONTENT_2:
@@ -93,7 +87,6 @@ jobs:
       # the consumer script steps), so dependency lifecycle scripts run by the installs and the
       # lifecycle replay below can never read the long-lived age identity (#458).
       HAS_DISCORD_WEBHOOK_URL: ${{ !!secrets.DISCORD_WEBHOOK_URL }}
-      HAS_DOT_ENV: ${{ !!secrets.DOT_ENV }}
       HAS_FILE_CONTENT_1: ${{ !!secrets.FILE_CONTENT_1 }}
       HAS_FILE_CONTENT_2: ${{ !!secrets.FILE_CONTENT_2 }}
       # Either registry token triggers the registry-config generation/cleanup and the hardened
@@ -127,11 +120,6 @@ jobs:
           ref: ${{ inputs.branch }}
       # Secrets are passed via env and written with printf so that quotes or backslashes in
       # their values cannot break out of the shell command.
-      - if: ${{ env.HAS_DOT_ENV == 'true' }}
-        run: printf '%s\n' "$DOT_ENV" > "$DOT_ENV_PATH"
-        env:
-          DOT_ENV: ${{ secrets.DOT_ENV }}
-          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
       - if: ${{ inputs.file_path_1 && env.HAS_FILE_CONTENT_1 == 'true' }}
         run: printf '%s\n' "$FILE_CONTENT_1" > "$FILE_PATH_1"
         env:
@@ -324,11 +312,9 @@ jobs:
         run: |
           : # Delete each file only when this run actually wrote it (the caller may commit
           : # files at these paths and run without the corresponding secret).
-          if [[ "$HAS_DOT_ENV" == "true" ]]; then rm -f -- "$DOT_ENV_PATH"; fi
           if [[ "$HAS_FILE_CONTENT_1" == "true" && -n "$FILE_PATH_1" ]]; then rm -f -- "$FILE_PATH_1"; fi
           if [[ "$HAS_FILE_CONTENT_2" == "true" && -n "$FILE_PATH_2" ]]; then rm -f -- "$FILE_PATH_2"; fi
         env:
-          DOT_ENV_PATH: ${{ inputs.dot_env_path }}
           FILE_PATH_1: ${{ inputs.file_path_1 }}
           FILE_PATH_2: ${{ inputs.file_path_2 }}
       - if: ${{ always() && env.HAS_REGISTRY_TOKEN == 'true' }}
