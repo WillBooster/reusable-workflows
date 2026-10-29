@@ -125,7 +125,7 @@ jobs:
             : # Pinned: this job may run with a preinstalled npm < 11.10 that ignores the gate, and
             : # published npm versions are immutable, so a pin removes the freshly-resolved-latest
             : # exposure the gate cannot cover here.
-            NODE_VERSIONS=$(npx -y semver@7.8.5 -r "$CONSTRAINT" 14.999.999 16.999.999 18.999.999 20.999.999 22.999.999 24.999.999 | xargs | sed 's/ /","/g' | sed 's/\.999\.999//g')
+            NODE_VERSIONS=$(npx -y semver@7.8.5 -r "$CONSTRAINT" 14.999.999 16.999.999 18.999.999 20.999.999 22.999.999 26.999.999 | xargs | sed 's/ /","/g' | sed 's/\.999\.999//g')
           fi
           echo "json=[\"$NODE_VERSIONS\"]" >> $GITHUB_OUTPUT
   test:
