@@ -17,14 +17,16 @@ for (const [key, value] of Object.entries(env)) assert.ok(value, `${key} is requ
 
 /**
  * `workspaces` maps a workspace path ('' for the root) to its name and dependency lists; `packages`
- * maps a key to `[name@resolution, registry, dependency lists, integrity]`, where workspace packages
- * have only the first element.
+ * maps a key to an array starting with `name@resolution`, e.g. `[name@version, registry, dependency
+ * lists, integrity]` for an npm package. Workspace packages have only the first element.
  */
 const lockfile = Bun.JSONC.parse(await Bun.file(LOCKFILE_PATH).text());
 assert.ok(lockfile.workspaces && lockfile.packages, `${LOCKFILE_PATH} has no workspaces or packages.`);
 
 /** @type {Map<string, { package_url: string, relationship: 'direct' | 'indirect', scope: 'runtime' | 'development', dependencies: string[] }>} */
 const resolved = new Map();
+/** Keys of traversed workspace and non-npm entries, which `resolved` cannot record, so that cycles through them terminate. */
+const visitedNonNpmKeys = new Set();
 // Runtime roots first, so a package reachable from both keeps the runtime scope.
 for (const scope of ['runtime', 'development']) {
   for (const [workspacePath, workspace] of Object.entries(lockfile.workspaces)) {
@@ -61,18 +63,27 @@ console.info(
 /** Records the package at `keyPath` and what it depends on, returning its package URL when it is an npm package. */
 function visit(keyPath, scope, isDirect) {
   if (!keyPath) return;
-  const entry = lockfile.packages[keyPath.join('/')];
+  const key = keyPath.join('/');
+  const entry = lockfile.packages[key];
   const { name, resolution } = splitNameAndResolution(entry[0]);
   if (resolution.startsWith('workspace:')) {
     // A workspace is not an npm package, but what it depends on is installed for its dependents.
+    if (visitedNonNpmKeys.has(key)) return;
+    visitedNonNpmKeys.add(key);
     const workspace = lockfile.workspaces[resolution.slice('workspace:'.length)] ?? {};
     for (const dependencyName of rootNamesOf(workspace, 'runtime')) {
       visit(resolveKeyPath(keyPath, dependencyName), scope, isDirect);
     }
     return;
   }
-  // git, github, file, and link resolutions have no npm package URL.
-  if (resolution.includes(':')) return;
+  const dependencyNames = dependencyNamesOf(entry);
+  // git, github, file, and link resolutions have no npm package URL, but their dependencies may be npm packages.
+  if (resolution.includes(':')) {
+    if (visitedNonNpmKeys.has(key)) return;
+    visitedNonNpmKeys.add(key);
+    for (const dependencyName of dependencyNames) visit(resolveKeyPath(keyPath, dependencyName), scope, false);
+    return;
+  }
 
   const packageUrl = toPackageUrl(name, resolution);
   const existing = resolved.get(packageUrl);
@@ -83,17 +94,17 @@ function visit(keyPath, scope, isDirect) {
   const record = { package_url: packageUrl, relationship: isDirect ? 'direct' : 'indirect', scope, dependencies: [] };
   // Registered before recursing, so dependency cycles terminate.
   resolved.set(packageUrl, record);
-  const lists = entry[2] ?? {};
-  const dependencyNames = Object.keys({
-    ...lists.dependencies,
-    ...lists.optionalDependencies,
-    ...lists.peerDependencies,
-  });
   const dependencyUrls = dependencyNames.map((dependencyName) =>
     visit(resolveKeyPath(keyPath, dependencyName), scope, false)
   );
   record.dependencies = [...new Set(dependencyUrls.filter((url) => url !== undefined))];
   return packageUrl;
+}
+
+/** The entry's dependency lists sit at a position that depends on its resolution kind, so take its first object element. */
+function dependencyNamesOf(entry) {
+  const lists = entry.slice(1).find((element) => typeof element === 'object' && element !== null) ?? {};
+  return Object.keys({ ...lists.dependencies, ...lists.optionalDependencies, ...lists.peerDependencies });
 }
 
 function rootNamesOf(workspace, scope) {
