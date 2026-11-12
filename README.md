@@ -8,7 +8,7 @@ A collection of reusable workflows for GitHub Actions.
 
 ## Runner policy
 
-Private callers always use self-hosted runners. `github_hosted_runner` remains accepted but cannot override repository visibility. A private caller's `runs_on` must be a JSON array containing `self-hosted`, for example `'["self-hosted","Linux","large"]'`; other valid JSON selections fall back to the workflow's self-hosted defaults. Invalid JSON can fail expression evaluation. Keep any required OS, size, or host labels in that array.
+Private callers always use self-hosted runners. `github_hosted_runner` remains accepted but cannot override repository visibility. A private caller's `runs_on` must be a JSON array containing `self-hosted`, for example `'["self-hosted","Linux","large"]'`; other valid JSON selections fall back to the workflow's self-hosted defaults. Invalid JSON can fail expression evaluation. Keep any required OS, size, or host labels in that array. The `small` size includes runners whose old OS cannot run `mise.toml` tools such as fnox, so select it only for jobs that use just the runner's own Node and `gh`.
 
 Public callers default to `ubuntu-latest` and may override `runs_on`. Unknown visibility uses self-hosted defaults. `bun run test` evaluates the workflow expressions with GitHub's expression engine to check this policy; CI runs it alongside actionlint.
 

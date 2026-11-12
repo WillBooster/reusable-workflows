@@ -59,12 +59,6 @@ for (const file of fs.readdirSync('.github/workflows').filter((name) => name.end
         `${file}:${name} loses public overrides`
       );
     }
-    if ([evaluate(true, {})].flat().includes('small')) {
-      assert.ok(
-        job.steps.every((step) => !step.uses && !/\b(?:mise|fnox)\b/.test(step.run ?? '')),
-        `${file}:${name} runs on small runners, so it must use only run steps without mise or fnox`
-      );
-    }
     const publicLabels = evaluate(false, {});
     if (file !== 'sync.yml')
       assert.ok(

@@ -10,7 +10,8 @@ on:
 jobs:
   close-comment:
     if: ${{ !inputs.target_organization || github.repository_owner == inputs.target_organization }}
-    # `small` includes runners whose old OS cannot run mise.toml tools such as fnox.
+    # `small` includes runners whose old OS cannot run mise.toml tools such as fnox, so this job may
+    # use only the runner's own Node and gh.
     runs-on: ${{ (toJSON(github.event.repository.private) == 'false' && 'ubuntu-latest') || fromJSON('["self-hosted", "small"]') }}
     env:
       FORCE_COLOR: 3
