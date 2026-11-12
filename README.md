@@ -25,6 +25,10 @@ The four install-capable workflows (`test.yml`, `deploy.yml`, `release.yml`, `ru
 
 Do NOT pass these secrets explicitly to the other workflows (e.g. `semantic-pr.yml`, `close-comment.yml`): GitHub rejects a `secrets:` map entry the callee does not declare (`secrets: inherit` is exempt from this validation). Running `wbfy` (>= 3.0.0) on the caller repository injects `VERDACCIO_TOKEN`/`FNOX_AGE_KEY` automatically.
 
+## Dependency submission for Bun
+
+GitHub's dependency graph does not parse `bun.lock`, so Dependabot alerts of a Bun repository cover only the versions written in `package.json` files. `submit-dependencies.yml` submits every npm package resolved in the caller's `bun.lock` through the dependency submission API, without installing dependencies, so that alerts cover transitive dependencies too. The caller must grant `contents: write`, and should run it on pushes to the default branch that change `bun.lock`: GitHub raises Dependabot alerts only for snapshots of the default branch.
+
 ## Automated fix application is retired
 
 `test.yml` never pushes fixes. Its test job runs the pull request's own dependencies, so its checkout persists no push credential (`persist-credentials: false`); when the fixers (gen-code, cleanup, lint-fix, build) change anything, the job fails with the diff, and a developer or agent applies it. The former App-based `autofix-apply.yml` flow (a `workflow_run` job committing an uploaded patch with a GitHub App token) was retired in 2026-07: committing CI-generated patches with a bot credential is a standing risk with little benefit now that agents fix and verify before pushing, and retiring it let the App private key and its token broker be decommissioned. The autofix.ci path for public repositories (`autofix.yml`) and the nightly self-applying `wbfy.yml` were retired at the same time, so this repository hosts no workflow that writes to a caller's repository at all.
