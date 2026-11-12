@@ -18,22 +18,7 @@
                     <option name="path" value=".github/workflows/close-comment.yml" />
                   </Item>
                   <Item>
-                    <option name="path" value=".github/workflows/debug.yml" />
-                  </Item>
-                  <Item>
-                    <option name="path" value=".github/workflows/debug-echo.yml" />
-                  </Item>
-                  <Item>
-                    <option name="path" value=".github/workflows/echo.yml" />
-                  </Item>
-                  <Item>
-                    <option name="path" value=".github/workflows/notify-ready.yml" />
-                  </Item>
-                  <Item>
                     <option name="path" value=".github/workflows/release.yml" />
-                  </Item>
-                  <Item>
-                    <option name="path" value=".github/workflows/request-review.yml" />
                   </Item>
                   <Item>
                     <option name="path" value=".github/workflows/semantic-pr.yml" />
@@ -42,19 +27,7 @@
                     <option name="path" value=".github/workflows/sync.yml" />
                   </Item>
                   <Item>
-                    <option name="path" value=".github/workflows/sync-this-repo.yml" />
-                  </Item>
-                  <Item>
-                    <option name="path" value=".github/workflows/sync-this-repo-force.yml" />
-                  </Item>
-                  <Item>
                     <option name="path" value=".github/workflows/test.yml" />
-                  </Item>
-                  <Item>
-                    <option name="path" value=".github/workflows/wbfy.yml" />
-                  </Item>
-                  <Item>
-                    <option name="path" value=".github/workflows/wbfy-merge.yml" />
                   </Item>
                 </list>
               </option>
