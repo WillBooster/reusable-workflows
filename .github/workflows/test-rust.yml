@@ -72,10 +72,12 @@ jobs:
           # The pull-request merge commit's first parent (HEAD^1) is the base the Cargo.lock gate diffs against.
           fetch-depth: 2
           persist-credentials: false
-      # Cargo's resolver has no minimum-publish-age gate before Rust 1.100, so a lockfile update can
-      # pull in a crate published minutes ago, and the build below would run its build scripts on this
-      # runner. Merge a fix that cannot wait 7 days by bypassing the ruleset. The line-based parser is
-      # sound only for the format cargo writes, so the PR's lockfile must use exactly that format: cargo
+      # Cargo's minimum-publish-age gate (Rust 1.100+, set in the repository's .cargo/config.toml) applies
+      # only while resolving: versions already in Cargo.lock are exempt, so `--locked` builds accept a
+      # lockfile written by an older toolchain, by hand, or with the gate bypassed, and the build below
+      # would run a crate published minutes ago on this runner. Merge a fix that cannot wait 7 days by
+      # bypassing the ruleset. The line-based parser is sound only for the format cargo writes, so the
+      # PR's lockfile must use exactly that format: cargo
       # also accepts other TOML spellings (e.g. `source="..."`, trailing comments) and other spellings of
       # the crates.io source (e.g. a trailing `/`) that the parser would skip. Only crates.io and git
       # sources are allowed, since no organization repository uses another registry. `cargo metadata` is
@@ -146,6 +148,11 @@ jobs:
             rustup default stable
           fi
           rustup show
+          # Older toolchains ignore the repository's crate publish-age gate, so lockfile updates made with them go ungated.
+          rust_version="$(rustc --version | cut -d ' ' -f 2)"
+          if ! printf '1.100.0\n%s\n' "$rust_version" | sort -V -C; then
+            echo "::warning::Rust $rust_version ignores the crate publish-age gate in .cargo/config.toml; pin Rust 1.100 or later in rust-toolchain.toml."
+          fi
       - if: ${{ needs.pre.outputs.should_skip != 'true' && runner.os == 'Linux' }}
         name: Install Tauri system dependencies
         working-directory: ${{ inputs.working_directory }}
