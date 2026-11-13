@@ -14,7 +14,7 @@ jobs:
         with:
           persist-credentials: false
       # Installs only Bun: the snapshot is built from bun.lock without installing dependencies.
-      - uses: jdx/mise-action@v5.2.7
+      - uses: jdx/mise-action@v5.2.8
         with:
           install_args: bun
           cache: ${{ toJSON(runner.environment != 'self-hosted') }}
