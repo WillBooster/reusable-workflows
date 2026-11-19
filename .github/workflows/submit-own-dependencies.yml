@@ -1,0 +1,17 @@
+name: Submit own dependencies
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - bun.lock
+      - .github/workflows/submit-own-dependencies.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  submit-dependencies:
+    uses: ./.github/workflows/submit-dependencies.yml
